@@ -5,8 +5,8 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-app.use(express.static(path.join(__dirname, '..', 'client')));
 
+app.use(express.static(path.join(__dirname, '..', 'client')));
 
 let rooms = {};
 
@@ -56,12 +56,21 @@ function playAI(roomId) {
 
   setTimeout(() => {
     if (playable) {
+      // If wild, choose color
+      if (playable.color === 'wild') {
+        const colors = ['red', 'green', 'blue', 'yellow'];
+        playable.chosenColor = colors[Math.floor(Math.random() * colors.length)];
+        io.to(roomId).emit('aiDeclaredColor', playable.chosenColor);
+      }
+
       room.discard.push(playable);
       aiHand.splice(aiHand.indexOf(playable), 1);
+
       io.to(roomId).emit('cardPlayed', {
         card: playable,
         nextPlayer: room.turnOrder[0],
         discardTop: room.discard[room.discard.length - 1],
+        playerId: 'AI'
       });
     } else {
       const drawn = room.deck.pop();
@@ -69,7 +78,10 @@ function playAI(roomId) {
       io.to(roomId).emit('cardDrawn', [drawn]);
     }
 
-    // Check if AI wins
+    // Emit AI hand count
+    io.to(roomId).emit('updateAIHandCount', aiHand.length);
+
+    // Check win
     if (aiHand.length === 0) {
       io.to(roomId).emit('gameEnd', 'AI');
       room.started = false;
@@ -126,6 +138,12 @@ io.on('connection', socket => {
       return;
     }
 
+    // If wild played, set discard color
+    if (card.color === 'wild' && card.chosenColor) {
+      card.color = card.chosenColor;
+      delete card.chosenColor;
+    }
+
     room.discard.push(card);
     playerHand.splice(playerHand.findIndex(c => c.color === card.color && c.value === card.value), 1);
 
@@ -133,6 +151,7 @@ io.on('connection', socket => {
       card,
       nextPlayer: room.turnOrder[0],
       discardTop: room.discard[room.discard.length - 1],
+      playerId: socket.id
     });
 
     // Check win
@@ -140,6 +159,11 @@ io.on('connection', socket => {
       io.to(roomId).emit('gameEnd', socket.id);
       room.started = false;
       return;
+    }
+
+    // Emit AI hand count if AI in room
+    if (room.players['AI']) {
+      io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
     }
 
     room.turnOrder.push(room.turnOrder.shift());
@@ -157,6 +181,11 @@ io.on('connection', socket => {
     const drawn = room.deck.pop();
     room.players[socket.id].push(drawn);
     io.to(socket.id).emit('cardDrawn', [drawn]);
+
+    // Emit AI hand count if AI in room
+    if (room.players['AI']) {
+      io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
+    }
 
     room.turnOrder.push(room.turnOrder.shift());
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
@@ -196,6 +225,11 @@ function startGame(roomId) {
 
   io.to(roomId).emit('gameStart', { discardTop: room.discard[room.discard.length - 1] });
   io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
+  // Emit AI hand count if AI in room
+  if (room.players['AI']) {
+    io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
+  }
 
   if (room.turnOrder[0] === 'AI') {
     playAI(roomId);
