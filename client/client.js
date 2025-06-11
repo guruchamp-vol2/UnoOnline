@@ -10,6 +10,8 @@ const gameDiv = document.getElementById('game');
 const handDiv = document.getElementById('hand');
 const discardDiv = document.getElementById('discard');
 const statusDiv = document.getElementById('status');
+const currentColorDisplay = document.getElementById('currentColorDisplay');
+const currentTurnDisplay = document.getElementById('currentTurnDisplay');
 const drawBtn = document.getElementById('draw');
 const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
@@ -18,6 +20,7 @@ let currentRoom = '';
 let myTurn = false;
 let myHand = [];
 let currentColor = null;
+let currentTurn = null;
 
 joinBtn.onclick = () => {
   currentRoom = roomInput.value;
@@ -38,6 +41,7 @@ playAgainBtn.onclick = () => {
   playAgainBtn.classList.add('hidden');
   aiHandCountDiv.textContent = '';
   currentColor = null;
+  currentTurn = null;
 };
 
 socket.on('roomList', rooms => {
@@ -51,11 +55,13 @@ function joinRoom(roomId) {
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
 }
 
-socket.on('gameStart', ({ discardTop, color }) => {
+socket.on('gameStart', ({ discardTop, color, firstTurn }) => {
   lobby.classList.add('hidden');
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
   currentColor = color || discardTop.color;
+  currentTurn = firstTurn;
+  updateTurnDisplay();
 });
 
 socket.on('hand', cards => {
@@ -71,6 +77,8 @@ socket.on('cardDrawn', cards => {
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
   currentColor = discardTop.color; // Update current color
+  currentTurn = nextPlayer;
+  updateTurnDisplay();
 
   if (playerId === socket.id) {
     // Remove the played card from hand
@@ -85,6 +93,8 @@ socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
 });
 
 socket.on('nextTurn', next => {
+  currentTurn = next;
+  updateTurnDisplay();
   myTurn = socket.id === next;
   statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn;
@@ -103,7 +113,16 @@ socket.on('updateAIHandCount', count => {
 
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
-  statusDiv.textContent = `AI chose ${color} color!`;
+  currentColorDisplay.textContent = `AI chose color: ${color}`;
+});
+
+socket.on('forceDraw', ({ count }) => {
+  alert(`You must draw ${count} card${count !== 1 ? 's' : ''}!`);
+});
+
+socket.on('updateCurrentColor', color => {
+  currentColor = color;
+  updateColorDisplay();
 });
 
 function renderHand() {
@@ -138,4 +157,12 @@ function updateDiscard(card) {
   el.className = `card ${card.color}`;
   el.textContent = card.value;
   discardDiv.appendChild(el);
+}
+
+function updateColorDisplay() {
+  currentColorDisplay.textContent = `Current Color: ${currentColor}`;
+}
+
+function updateTurnDisplay() {
+  currentTurnDisplay.textContent = `Current Turn: ${currentTurn === socket.id ? 'YOU' : (currentTurn === 'AI' ? 'AI' : 'Other Player')}`;
 }

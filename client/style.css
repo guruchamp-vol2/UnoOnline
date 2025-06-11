@@ -215,3 +215,76 @@ body {
 #playAgain:hover {
   background: #8e44ad;
 }
+body {
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: white;
+    text-align: center;
+    padding: 20px;
+  }
+  
+  .hidden {
+    display: none;
+  }
+  
+  #lobby, #game {
+    max-width: 600px;
+    margin: auto;
+    background: rgba(0,0,0,0.4);
+    padding: 20px;
+    border-radius: 10px;
+  }
+  
+  #hand {
+    margin-top: 20px;
+  }
+  
+  .card {
+    display: inline-block;
+    width: 60px;
+    height: 90px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.9);
+    margin: 5px;
+    line-height: 90px;
+    text-align: center;
+    font-size: 20px;
+    color: #000;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  }
+  
+  .card.red {
+    background: linear-gradient(135deg, #ff5f6d, #ffc371);
+  }
+  
+  .card.green {
+    background: linear-gradient(135deg, #56ab2f, #a8e063);
+  }
+  
+  .card.blue {
+    background: linear-gradient(135deg, #2193b0, #6dd5ed);
+  }
+  
+  .card.yellow {
+    background: linear-gradient(135deg, #f2994a, #f2c94c);
+  }
+  
+  .card.wild {
+    background: linear-gradient(135deg, #8e2de2, #4a00e0);
+    color: white;
+  }
+  
+  .room-item {
+    padding: 8px;
+    margin: 5px 0;
+    background: rgba(255,255,255,0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+  }
+  
+  .room-item:hover {
+    background: rgba(255,255,255,0.2);
+  }
+  
