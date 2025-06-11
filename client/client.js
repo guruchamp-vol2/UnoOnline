@@ -12,9 +12,12 @@ const discardDiv = document.getElementById('discard');
 const statusDiv = document.getElementById('status');
 const drawBtn = document.getElementById('draw');
 const playAgainBtn = document.getElementById('playAgain');
+const aiHandCountDiv = document.getElementById('aiHandCount');
 
 let currentRoom = '';
 let myTurn = false;
+let myHand = [];
+let currentColor = null;
 
 joinBtn.onclick = () => {
   currentRoom = roomInput.value;
@@ -33,6 +36,8 @@ drawBtn.onclick = () => {
 playAgainBtn.onclick = () => {
   socket.emit('restartGame', currentRoom);
   playAgainBtn.classList.add('hidden');
+  aiHandCountDiv.textContent = '';
+  currentColor = null;
 };
 
 socket.on('roomList', rooms => {
@@ -46,26 +51,42 @@ function joinRoom(roomId) {
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
 }
 
-socket.on('gameStart', ({ discardTop }) => {
+socket.on('gameStart', ({ discardTop, color }) => {
   lobby.classList.add('hidden');
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
+  currentColor = color || discardTop.color;
 });
 
-socket.on('hand', cards => renderHand(cards));
+socket.on('hand', cards => {
+  myHand = cards;
+  renderHand();
+});
 
-socket.on('cardDrawn', cards => cards.forEach(c => addCard(c)));
+socket.on('cardDrawn', cards => {
+  myHand = myHand.concat(cards);
+  renderHand();
+});
 
-socket.on('cardPlayed', ({ card, nextPlayer, discardTop }) => {
+socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
+  currentColor = discardTop.color; // Update current color
+
+  if (playerId === socket.id) {
+    // Remove the played card from hand
+    const index = myHand.findIndex(c => c.color === card.color && c.value === card.value);
+    if (index !== -1) myHand.splice(index, 1);
+    renderHand();
+  }
+
   myTurn = socket.id === nextPlayer;
-  statusDiv.textContent = myTurn ? 'Your turn!' : 'Waiting...';
+  statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn;
 });
 
 socket.on('nextTurn', next => {
   myTurn = socket.id === next;
-  statusDiv.textContent = myTurn ? 'Your turn!' : 'Waiting...';
+  statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn;
 });
 
@@ -76,9 +97,18 @@ socket.on('gameEnd', winner => {
   playAgainBtn.classList.remove('hidden');
 });
 
-function renderHand(cards) {
+socket.on('updateAIHandCount', count => {
+  aiHandCountDiv.textContent = `AI has ${count} card${count !== 1 ? 's' : ''}`;
+});
+
+socket.on('aiDeclaredColor', color => {
+  currentColor = color;
+  statusDiv.textContent = `AI chose ${color} color!`;
+});
+
+function renderHand() {
   handDiv.innerHTML = '';
-  cards.forEach(addCard);
+  myHand.forEach(addCard);
 }
 
 function addCard(card) {
@@ -87,6 +117,16 @@ function addCard(card) {
   el.textContent = card.value;
   el.onclick = () => {
     if (!myTurn) return;
+
+    if (card.color === 'wild') {
+      const chosenColor = prompt("Choose a color (red, green, blue, yellow):", "red");
+      if (!chosenColor || !['red', 'green', 'blue', 'yellow'].includes(chosenColor)) {
+        alert('Invalid color!');
+        return;
+      }
+      card.chosenColor = chosenColor;
+    }
+
     socket.emit('playCard', { roomId: currentRoom, card });
   };
   handDiv.appendChild(el);
@@ -98,7 +138,4 @@ function updateDiscard(card) {
   el.className = `card ${card.color}`;
   el.textContent = card.value;
   discardDiv.appendChild(el);
-  const path = require('path');
-  app.use(express.static(path.join(__dirname, '..', 'client')));
-  
 }
