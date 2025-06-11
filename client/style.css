@@ -1,0 +1,175 @@
+/* Global Styles */
+body { 
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.hidden { display: none }
+
+/* Lobby Styles */
+#lobby {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    padding: 2rem;
+    border-radius: 20px;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+}
+
+#lobby h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1.5rem;
+    color: #ffffff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+#lobby input {
+    width: 100%;
+    padding: 12px 20px;
+    margin: 8px 0;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    box-sizing: border-box;
+    font-size: 1rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#lobby input:focus {
+    outline: none;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+#join {
+    width: 100%;
+    padding: 12px 20px;
+    margin: 16px 0;
+    border: none;
+    border-radius: 10px;
+    background: #4CAF50;
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#join:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+#players {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    min-height: 50px;
+}
+
+.player-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    margin: 4px 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+/* Game Styles */
+#game {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.card {
+    display: inline-block;
+    width: 60px; height: 90px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    line-height: 90px;
+    cursor: pointer;
+    margin: 5px;
+    position: relative;
+    transition: transform 0.3s ease;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.card.play {
+    transform: translateY(-20px) rotateZ(10deg);
+}
+
+.red { background: linear-gradient(135deg, #ff5f6d, #ffc371) }
+.green { background: linear-gradient(135deg, #56ab2f, #a8e063) }
+.blue { background: linear-gradient(135deg, #2193b0, #6dd5ed) }
+.yellow { background: linear-gradient(135deg, #f2994a, #f2c94c) }
+.wild { 
+    background: linear-gradient(135deg, #8e2de2, #4a00e0);
+    color: white;
+}
+
+/* Chat Styles */
+#chat {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#messages {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.message {
+    padding: 8px;
+    margin: 4px 0;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    text-align: left;
+}
+
+#chatInput {
+    width: calc(100% - 100px);
+    padding: 12px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    margin: 10px 5px;
+    border-radius: 8px;
+}
+
+#sendChat {
+    width: 80px;
+    padding: 12px;
+    border: none;
+    background: #4CAF50;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
