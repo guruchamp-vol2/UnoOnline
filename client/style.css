@@ -173,3 +173,45 @@ body {
     margin-right: 10px;
     border: 2px solid rgba(255, 255, 255, 0.2);
 }
+.room-item {
+  padding: 8px;
+  margin: 5px 0;
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.room-item:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+#playAI {
+  margin-top: 10px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  background: #f39c12;
+  color: white;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+#playAI:hover {
+  background: #e67e22;
+}
+
+#playAgain {
+  margin-top: 10px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  background: #9b59b6;
+  color: white;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+#playAgain:hover {
+  background: #8e44ad;
+}

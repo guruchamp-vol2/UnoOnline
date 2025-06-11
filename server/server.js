@@ -1,37 +1,35 @@
-// server/server.js
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
-const db = require('./db');
-const Game = require('./models/Game');
-const Player = require('./models/Player');
-const apiRouter = require('./routes/api');
-
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server);
 
-app.use(express.json());
-app.use('/api', apiRouter);
-app.use(express.static(path.join(__dirname, '../client')));
+app.use(express.static('client')); // serve index.html and client.js
+
+let rooms = {};
 
 function createDeck() {
-  const colors = ['red','green','blue','yellow'];
-  const values = [...Array(10).keys()].map(String).concat(['skip','reverse','+2']);
-  let deck = [];
-  colors.forEach(c => {
-    values.forEach(v => {
-      deck.push({ color: c, value: v });
-      if (v !== '0') deck.push({ color: c, value: v });
+  const colors = ['red', 'green', 'blue', 'yellow'];
+  const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', '+2'];
+  const deck = [];
+
+  colors.forEach(color => {
+    values.forEach(value => {
+      deck.push({ color, value });
+      if (value !== '0') deck.push({ color, value });
     });
   });
-  for (let i=0; i<4; i++){
-    deck.push({ color:'wild', value:'wild' });
-    deck.push({ color:'wild', value:'+4' });
+
+  for (let i = 0; i < 4; i++) {
+    deck.push({ color: 'wild', value: 'wild' });
+    deck.push({ color: 'wild', value: '+4' });
   }
-  // shuffle
+
+  return shuffle(deck);
+}
+
+function shuffle(deck) {
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -39,129 +37,168 @@ function createDeck() {
   return deck;
 }
 
+function isPlayable(card, topCard) {
+  return (
+    card.color === 'wild' ||
+    card.color === topCard.color ||
+    card.value === topCard.value
+  );
+}
+
+function playAI(roomId) {
+  const room = rooms[roomId];
+  if (!room || !room.started) return;
+
+  const aiHand = room.players['AI'];
+  const topCard = room.discard[room.discard.length - 1];
+  const playable = aiHand.find(c => isPlayable(c, topCard));
+
+  setTimeout(() => {
+    if (playable) {
+      room.discard.push(playable);
+      aiHand.splice(aiHand.indexOf(playable), 1);
+      io.to(roomId).emit('cardPlayed', {
+        card: playable,
+        nextPlayer: room.turnOrder[0],
+        discardTop: room.discard[room.discard.length - 1],
+      });
+    } else {
+      const drawn = room.deck.pop();
+      aiHand.push(drawn);
+      io.to(roomId).emit('cardDrawn', [drawn]);
+    }
+
+    // Check if AI wins
+    if (aiHand.length === 0) {
+      io.to(roomId).emit('gameEnd', 'AI');
+      room.started = false;
+      return;
+    }
+
+    // Next turn
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
+    }
+  }, 1000);
+}
+
 io.on('connection', socket => {
-  socket.on('joinGame', async ({ roomId, name, avatar }) => {
-    socket.join(roomId);
-    let game = await Game.findOne({ roomId }).populate('players');
-    if (!game) {
-      game = await Game.create({
-        roomId,
+  socket.on('joinGame', ({ roomId, name, vsAI }) => {
+    if (!rooms[roomId]) {
+      rooms[roomId] = {
+        players: {},
+        turnOrder: [],
         deck: createDeck(),
         discard: [],
-        players: [],
-        turnIndex: 0,
-        direction: 1,
-        started: false
-      });
+        started: false,
+      };
     }
 
-    const player = await Player.create({
-      socketId: socket.id,
-      name,
-      avatar,
-      hand: []
-    });
-    game.players.push(player);
-    player.hand = game.deck.splice(0,7);
-    await player.save();
-    await game.save();
+    rooms[roomId].players[socket.id] = [];
+    rooms[roomId].turnOrder.push(socket.id);
+    socket.join(roomId);
 
-    io.to(roomId).emit('lobbyUpdate', game.players.map(p=>({
-      id: p.socketId, name: p.name, avatar: p.avatar
-    })));
+    io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
 
-    if (game.players.length >= 2 && !game.started) {
-      game.started = true;
-      game.discard.push(game.deck.shift());
-      await game.save();
-      io.to(roomId).emit('gameStart', {
-        discardTop: game.discard[0],
-        players: game.players.map(p=>p.socketId)
-      });
+    if (vsAI && !rooms[roomId].players['AI']) {
+      rooms[roomId].players['AI'] = [];
+      rooms[roomId].turnOrder.push('AI');
+    }
+
+    if (Object.keys(rooms[roomId].players).length >= 2 || vsAI) {
+      startGame(roomId);
     }
   });
 
-  socket.on('chatMessage', ({ roomId, msg }) => {
-    io.to(roomId).emit('chatMessage', {
-      from: socket.id,
-      msg,
-      timestamp: Date.now()
-    });
-  });
+  socket.on('playCard', ({ roomId, card }) => {
+    const room = rooms[roomId];
+    if (!room || room.turnOrder[0] !== socket.id) return;
 
-  socket.on('playCard', async ({ roomId, card }) => {
-    const game = await Game.findOne({ roomId }).populate('players');
-    const idx = game.players.findIndex(p=>p.socketId===socket.id);
-    if (idx !== game.turnIndex) return;
+    const playerHand = room.players[socket.id];
+    const topCard = room.discard[room.discard.length - 1];
 
-    const player = game.players[idx];
-    const top = game.discard[game.discard.length-1];
-    if (
-      card.color !== top.color &&
-      card.value !== top.value &&
-      card.color !== 'wild'
-    ) {
-      return socket.emit('illegalMove');
+    if (!isPlayable(card, topCard)) {
+      io.to(socket.id).emit('illegalMove');
+      return;
     }
 
-    const handIdx = player.hand.findIndex(c=>c.color===card.color&&c.value===card.value);
-    player.hand.splice(handIdx,1);
-    game.discard.push(card);
-
-    if (card.value === 'reverse') game.direction *= -1;
-    if (card.value === 'skip') {
-      game.turnIndex = (idx + game.direction + game.players.length) % game.players.length;
-    }
-    if (card.value === '+2' || card.value === '+4') {
-      const count = card.value === '+2' ? 2 : 4;
-      const next = (idx + game.direction + game.players.length) % game.players.length;
-      const nextPlayer = game.players[next];
-      const draw = game.deck.splice(0,count);
-      nextPlayer.hand.push(...draw);
-      io.to(nextPlayer.socketId).emit('cardDrawn', draw);
-    }
-
-    game.turnIndex = (game.turnIndex + game.direction + game.players.length) % game.players.length;
-    await Promise.all([
-      game.save(),
-      player.save(),
-      ...game.players.map(p=>p.save())
-    ]);
+    room.discard.push(card);
+    playerHand.splice(playerHand.findIndex(c => c.color === card.color && c.value === card.value), 1);
 
     io.to(roomId).emit('cardPlayed', {
       card,
-      nextPlayer: game.players[game.turnIndex].socketId,
-      discardTop: card
+      nextPlayer: room.turnOrder[0],
+      discardTop: room.discard[room.discard.length - 1],
     });
 
-    if (player.hand.length === 1) {
-      io.to(roomId).emit('mustCallUno', socket.id);
-    }
-    if (player.hand.length === 0) {
+    // Check win
+    if (playerHand.length === 0) {
       io.to(roomId).emit('gameEnd', socket.id);
+      room.started = false;
+      return;
+    }
+
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
     }
   });
 
-  socket.on('drawCard', async roomId => {
-    const game = await Game.findOne({ roomId }).populate('players');
-    const idx = game.players.findIndex(p=>p.socketId===socket.id);
-    if (idx !== game.turnIndex) return;
-    const player = game.players[idx];
-    const draw = game.deck.shift();
-    player.hand.push(draw);
-    await player.save();
+  socket.on('drawCard', roomId => {
+    const room = rooms[roomId];
+    if (!room || room.turnOrder[0] !== socket.id) return;
 
-    game.turnIndex = (idx + 1) % game.players.length;
-    await game.save();
+    const drawn = room.deck.pop();
+    room.players[socket.id].push(drawn);
+    io.to(socket.id).emit('cardDrawn', [drawn]);
 
-    socket.emit('cardDrawn', [draw]);
-    io.to(roomId).emit('nextTurn', game.players[game.turnIndex].socketId);
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
+    }
+  });
+
+  socket.on('restartGame', roomId => {
+    startGame(roomId);
   });
 
   socket.on('disconnect', () => {
-    // optional cleanup logic
+    for (const [roomId, room] of Object.entries(rooms)) {
+      if (room.players[socket.id]) {
+        delete room.players[socket.id];
+        room.turnOrder = room.turnOrder.filter(id => id !== socket.id);
+        io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, r]) => [id, Object.keys(r.players).length])));
+      }
+    }
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
+function startGame(roomId) {
+  const room = rooms[roomId];
+  room.deck = createDeck();
+  room.discard = [room.deck.pop()];
+  room.started = true;
+
+  for (const playerId of Object.keys(room.players)) {
+    room.players[playerId] = room.deck.splice(-7);
+    if (playerId !== 'AI') {
+      io.to(playerId).emit('hand', room.players[playerId]);
+    }
+  }
+
+  io.to(roomId).emit('gameStart', { discardTop: room.discard[room.discard.length - 1] });
+  io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
+  if (room.turnOrder[0] === 'AI') {
+    playAI(roomId);
+  }
+}
+
+server.listen(3000, () => console.log('🚀 Server on 3000'));

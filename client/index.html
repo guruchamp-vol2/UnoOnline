@@ -1,42 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Online UNO</title>
-  <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="lobby">
     <h1>UNO Online</h1>
-    <div class="input-group">
-      <input id="name" placeholder="Your name" autocomplete="off">
-      <input id="avatar" placeholder="Avatar URL (optional)" autocomplete="off">
-      <input id="room" placeholder="Room ID" autocomplete="off">
-      <button id="join">Join Game</button>
-    </div>
-    <div id="players">
-      <h3>Players in Room</h3>
-      <!-- Players will be dynamically added here -->
-    </div>
+    <input id="name" placeholder="Your name" autocomplete="off" />
+    <input id="room" placeholder="Room ID" autocomplete="off" />
+    <button id="join">Join Game</button>
+    <button id="playAI">Play vs AI</button>
+    <h3>Available Rooms</h3>
+    <div id="roomList"></div>
   </div>
 
   <div id="game" class="hidden">
-    <div id="game-info">
-      <div id="status"></div>
-      <div id="discard"></div>
-    </div>
+    <div id="status"></div>
+    <div id="discard"></div>
     <div id="hand"></div>
     <button id="draw">Draw Card</button>
-
-    <div id="chat">
-      <div id="messages"></div>
-      <div class="chat-input">
-        <input id="chatInput" placeholder="Type a message…" autocomplete="off">
-        <button id="sendChat">Send</button>
-      </div>
-    </div>
+    <button id="playAgain" class="hidden">Play Again</button>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
