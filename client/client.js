@@ -98,4 +98,6 @@ function updateDiscard(card) {
   el.className = `card ${card.color}`;
   el.textContent = card.value;
   discardDiv.appendChild(el);
+  app.use(express.static('../client'));
+
 }
