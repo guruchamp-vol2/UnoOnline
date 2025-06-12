@@ -10,8 +10,6 @@ const gameDiv = document.getElementById('game');
 const handDiv = document.getElementById('hand');
 const discardDiv = document.getElementById('discard');
 const statusDiv = document.getElementById('status');
-const currentColorDisplay = document.getElementById('currentColorDisplay');
-const currentTurnDisplay = document.getElementById('currentTurnDisplay');
 const drawBtn = document.getElementById('draw');
 const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
@@ -20,7 +18,7 @@ let currentRoom = '';
 let myTurn = false;
 let myHand = [];
 let currentColor = null;
-let currentTurn = null;
+let canDraw = true; // Enforce one draw per turn
 
 joinBtn.onclick = () => {
   currentRoom = roomInput.value;
@@ -33,7 +31,9 @@ playAIBtn.onclick = () => {
 };
 
 drawBtn.onclick = () => {
+  if (!myTurn || !canDraw) return;
   socket.emit('drawCard', currentRoom);
+  canDraw = false; // Only allow 1 draw per turn
 };
 
 playAgainBtn.onclick = () => {
@@ -41,7 +41,6 @@ playAgainBtn.onclick = () => {
   playAgainBtn.classList.add('hidden');
   aiHandCountDiv.textContent = '';
   currentColor = null;
-  currentTurn = null;
 };
 
 socket.on('roomList', rooms => {
@@ -55,13 +54,11 @@ function joinRoom(roomId) {
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
 }
 
-socket.on('gameStart', ({ discardTop, color, firstTurn }) => {
+socket.on('gameStart', ({ discardTop, color }) => {
   lobby.classList.add('hidden');
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
   currentColor = color || discardTop.color;
-  currentTurn = firstTurn;
-  updateTurnDisplay();
 });
 
 socket.on('hand', cards => {
@@ -72,32 +69,34 @@ socket.on('hand', cards => {
 socket.on('cardDrawn', cards => {
   myHand = myHand.concat(cards);
   renderHand();
+  // After draw, player must pass turn unless playable
+  canDraw = false;
 });
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
-  currentColor = discardTop.color; // Update current color
-  currentTurn = nextPlayer;
-  updateTurnDisplay();
+  currentColor = discardTop.color;
 
   if (playerId === socket.id) {
-    // Remove the played card from hand
+    // Remove played card from hand
     const index = myHand.findIndex(c => c.color === card.color && c.value === card.value);
     if (index !== -1) myHand.splice(index, 1);
     renderHand();
   }
 
   myTurn = socket.id === nextPlayer;
+  canDraw = true; // Reset draw permission on new turn
+
   statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
-  drawBtn.disabled = !myTurn;
+  drawBtn.disabled = !myTurn || !canDraw;
 });
 
 socket.on('nextTurn', next => {
-  currentTurn = next;
-  updateTurnDisplay();
   myTurn = socket.id === next;
+  canDraw = true; // Reset draw permission on new turn
+
   statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
-  drawBtn.disabled = !myTurn;
+  drawBtn.disabled = !myTurn || !canDraw;
 });
 
 socket.on('illegalMove', () => alert('Illegal move!'));
@@ -113,16 +112,7 @@ socket.on('updateAIHandCount', count => {
 
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
-  currentColorDisplay.textContent = `AI chose color: ${color}`;
-});
-
-socket.on('forceDraw', ({ count }) => {
-  alert(`You must draw ${count} card${count !== 1 ? 's' : ''}!`);
-});
-
-socket.on('updateCurrentColor', color => {
-  currentColor = color;
-  updateColorDisplay();
+  statusDiv.textContent = `AI chose ${color} color!`;
 });
 
 function renderHand() {
@@ -147,6 +137,7 @@ function addCard(card) {
     }
 
     socket.emit('playCard', { roomId: currentRoom, card });
+    canDraw = false; // Once played, you can't draw more in the same turn
   };
   handDiv.appendChild(el);
 }
@@ -157,12 +148,4 @@ function updateDiscard(card) {
   el.className = `card ${card.color}`;
   el.textContent = card.value;
   discardDiv.appendChild(el);
-}
-
-function updateColorDisplay() {
-  currentColorDisplay.textContent = `Current Color: ${currentColor}`;
-}
-
-function updateTurnDisplay() {
-  currentTurnDisplay.textContent = `Current Turn: ${currentTurn === socket.id ? 'YOU' : (currentTurn === 'AI' ? 'AI' : 'Other Player')}`;
 }
