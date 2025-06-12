@@ -69,7 +69,6 @@ socket.on('hand', cards => {
 socket.on('cardDrawn', cards => {
   myHand = myHand.concat(cards);
   renderHand();
-  // After draw, player must pass turn unless playable
   canDraw = false;
 });
 
@@ -78,14 +77,13 @@ socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   currentColor = discardTop.color;
 
   if (playerId === socket.id) {
-    // Remove played card from hand
     const index = myHand.findIndex(c => c.color === card.color && c.value === card.value);
     if (index !== -1) myHand.splice(index, 1);
     renderHand();
   }
 
   myTurn = socket.id === nextPlayer;
-  canDraw = true; // Reset draw permission on new turn
+  canDraw = true;
 
   statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn || !canDraw;
@@ -93,7 +91,7 @@ socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
 
 socket.on('nextTurn', next => {
   myTurn = socket.id === next;
-  canDraw = true; // Reset draw permission on new turn
+  canDraw = true;
 
   statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn || !canDraw;
@@ -122,8 +120,19 @@ function renderHand() {
 
 function addCard(card) {
   const el = document.createElement('div');
-  el.className = `card ${card.color}`;
-  el.textContent = card.value;
+  el.className = 'card';
+
+  let img = document.createElement('img');
+  img.className = 'card-img';
+  img.style.width = '80px';
+  img.style.height = '120px';
+
+  let imageName = getImageName(card);
+
+  img.src = `cards/${imageName}.png`;
+
+  el.appendChild(img);
+
   el.onclick = () => {
     if (!myTurn) return;
 
@@ -137,15 +146,43 @@ function addCard(card) {
     }
 
     socket.emit('playCard', { roomId: currentRoom, card });
-    canDraw = false; // Once played, you can't draw more in the same turn
+    canDraw = false;
   };
+
   handDiv.appendChild(el);
 }
 
 function updateDiscard(card) {
   discardDiv.innerHTML = '';
   const el = document.createElement('div');
-  el.className = `card ${card.color}`;
-  el.textContent = card.value;
+  el.className = 'card';
+
+  let img = document.createElement('img');
+  img.className = 'card-img';
+  img.style.width = '80px';
+  img.style.height = '120px';
+
+  let imageName = getImageName(card);
+
+  img.src = `cards/${imageName}.png`;
+
+  el.appendChild(img);
   discardDiv.appendChild(el);
+}
+
+function getImageName(card) {
+  if (card.color === 'wild') {
+    if (card.value === 'wild') {
+      return 'Wild_Card_Change_Colour';
+    } else if (card.value === '+4') {
+      return 'Wild_Card_Draw_4';
+    }
+  } else {
+    let valueName = card.value;
+    if (valueName === 'skip') valueName = 'skip';
+    if (valueName === 'reverse') valueName = 'reverse';
+    if (valueName === '+2') valueName = '+2';
+
+    return `${card.color}_${valueName}`;
+  }
 }
