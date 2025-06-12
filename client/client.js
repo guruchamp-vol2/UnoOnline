@@ -18,7 +18,7 @@ let currentRoom = '';
 let myTurn = false;
 let myHand = [];
 let currentColor = null;
-let canDraw = true; // Enforce one draw per turn
+let canDraw = true;
 
 joinBtn.onclick = () => {
   currentRoom = roomInput.value;
@@ -33,7 +33,7 @@ playAIBtn.onclick = () => {
 drawBtn.onclick = () => {
   if (!myTurn || !canDraw) return;
   socket.emit('drawCard', currentRoom);
-  canDraw = false; // Only allow 1 draw per turn
+  canDraw = false;
 };
 
 playAgainBtn.onclick = () => {
@@ -179,9 +179,11 @@ function getImageName(card) {
     }
   } else {
     let valueName = card.value;
-    if (valueName === 'skip') valueName = 'skip';
-    if (valueName === 'reverse') valueName = 'reverse';
-    if (valueName === '+2') valueName = '+2';
+
+    // Map special names to match your image pack
+    if (valueName === 'skip') valueName = 'Skip';
+    if (valueName === 'reverse') valueName = 'Reverse';
+    if (valueName === '+2') valueName = 'Draw_Two';
 
     return `${card.color}_${valueName}`;
   }
