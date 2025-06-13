@@ -171,6 +171,13 @@ function updateDiscard(card) {
 }
 
 function getImageName(card) {
+  let colorMap = {
+    blue: 'Blue',
+    green: 'Green',
+    red: 'Red',
+    yellow: 'Yellow'
+  };
+
   if (card.color === 'wild') {
     if (card.value === 'wild') {
       return 'Wild_Card_Change_Colour';
@@ -183,8 +190,8 @@ function getImageName(card) {
     // Map special names to match your image pack
     if (valueName === 'skip') valueName = 'Skip';
     if (valueName === 'reverse') valueName = 'Reverse';
-    if (valueName === '+2') valueName = 'Draw_Two';
+    if (valueName === '+2') valueName = 'Draw_2';
 
-    return `${card.color}_${valueName}`;
+    return `${colorMap[card.color]}_${valueName}`;
   }
 }
