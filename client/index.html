@@ -26,6 +26,15 @@
     <div id="hand"></div>
     <button id="draw">Draw Card</button>
     <button id="playAgain" class="hidden">Play Again</button>
+    <div id="feedback" style="margin-top:20px;">
+      <h3>Feedback</h3>
+      <input id="fbName" placeholder="Your name" required><br>
+      <input id="fbEmail" placeholder="Your email (optional)"><br>
+      <textarea id="fbMessage" placeholder="Your feedback" required></textarea><br>
+      <button id="submitFeedback">Submit Feedback</button>
+      <div id="feedbackStatus"></div>
+    </div>
+    
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

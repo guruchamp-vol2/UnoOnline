@@ -2,11 +2,29 @@ const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const mongoose = require('mongoose');
+const Feedback = require('./models/Feedback');
+const nodemailer = require('nodemailer');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, '..', 'client')));
+app.use(express.json());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('✅ MongoDB connected for Feedback'))
+  .catch(err => console.error('❌ MongoDB error:', err));
+
+// Nodemailer transporter (we will not use it for now, but leave it ready!)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.FEEDBACK_EMAIL_USER,
+    pass: process.env.FEEDBACK_EMAIL_PASS
+  }
+});
 
 let rooms = {};
 
@@ -229,5 +247,65 @@ function startGame(roomId) {
     playAI(roomId);
   }
 }
+
+// === Feedback route ===
+app.post('/feedback', async (req, res) => {
+  const { name, email, message } = req.body;
+
+  if (!name || !message) {
+    return res.status(400).json({ error: 'Missing required fields.' });
+  }
+
+  try {
+    const fb = new Feedback({ name, email, message });
+    await fb.save();
+
+    // Commented out email send:
+    /*
+    const mailOptions = {
+      from: process.env.FEEDBACK_EMAIL_USER,
+      to: 'dhruvbajaj3000@gmail.com',
+      subject: 'New Feedback Received',
+      text: `Name: ${name}\nEmail: ${email}\nMessage:\n${message}`
+    };
+
+    transporter.sendMail(mailOptions, (err, info) => {
+      if (err) {
+        console.error('❌ Email send error:', err);
+      } else {
+        console.log('✅ Feedback email sent:', info.response);
+      }
+    });
+    */
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Feedback save error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// === Feedback list page ===
+app.get('/feedback-list', async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find().sort({ createdAt: -1 });
+    let html = '<h1>Feedback List</h1>';
+
+    feedbacks.forEach(fb => {
+      html += `
+        <div style="border:1px solid #ccc; padding:10px; margin:10px;">
+          <strong>Name:</strong> ${fb.name} <br>
+          <strong>Email:</strong> ${fb.email || 'N/A'} <br>
+          <strong>Message:</strong> ${fb.message} <br>
+          <strong>Date:</strong> ${new Date(fb.createdAt).toLocaleString()} <br>
+        </div>
+      `;
+    });
+
+    res.send(html);
+  } catch (err) {
+    res.status(500).send('Error loading feedback.');
+  }
+});
 
 server.listen(3000, () => console.log('🚀 Server on 3000'));

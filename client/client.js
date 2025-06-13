@@ -171,7 +171,6 @@ function updateDiscard(card) {
   discardDiv.appendChild(el);
 }
 
-// ✅ Safe comparison for wilds with chosenColor
 function cardsAreEqual(a, b) {
   return (
     a.color === b.color &&
@@ -180,7 +179,6 @@ function cardsAreEqual(a, b) {
   );
 }
 
-// ✅ Updated for your capitalized image names
 function getImageName(card) {
   const colorMap = {
     blue: 'Blue',
@@ -202,3 +200,33 @@ function getImageName(card) {
     return `${colorMap[card.color]}_${valueName}`;
   }
 }
+
+// === Feedback submit ===
+document.getElementById('submitFeedback').onclick = () => {
+  const name = document.getElementById('fbName').value.trim();
+  const email = document.getElementById('fbEmail').value.trim();
+  const message = document.getElementById('fbMessage').value.trim();
+
+  if (!name || !message) {
+    document.getElementById('feedbackStatus').innerText = 'Please fill in required fields.';
+    return;
+  }
+
+  fetch('/feedback', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name, email, message })
+  })
+  .then(res => res.json())
+  .then(data => {
+    document.getElementById('feedbackStatus').innerText = 'Feedback submitted! Thank you.';
+    document.getElementById('fbName').value = '';
+    document.getElementById('fbEmail').value = '';
+    document.getElementById('fbMessage').value = '';
+  })
+  .catch(err => {
+    document.getElementById('feedbackStatus').innerText = 'Error submitting feedback.';
+  });
+};
