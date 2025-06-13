@@ -44,7 +44,7 @@ playAgainBtn.onclick = () => {
 };
 
 socket.on('roomList', rooms => {
-  roomListDiv.innerHTML = Object.keys(rooms).map(r => 
+  roomListDiv.innerHTML = Object.keys(rooms).map(r =>
     `<div class="room-item" onclick="joinRoom('${r}')">${r} (${rooms[r]} player(s))</div>`
   ).join('');
 });
@@ -58,7 +58,7 @@ socket.on('gameStart', ({ discardTop, color }) => {
   lobby.classList.add('hidden');
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
-  currentColor = color || discardTop.color;
+  currentColor = color || discardTop.chosenColor || discardTop.color;
 });
 
 socket.on('hand', cards => {
@@ -75,36 +75,32 @@ socket.on('cardDrawn', cards => {
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
 
-  // ✅ Correct handling of currentColor with wild:
   if (discardTop.color === 'wild' && discardTop.chosenColor) {
     currentColor = discardTop.chosenColor;
   } else {
     currentColor = discardTop.color;
   }
 
-  // ✅ Correct removal of played card from my hand:
   if (playerId === socket.id) {
-    const index = myHand.findIndex(c => 
-      c.color === card.color && 
-      c.value === card.value &&
-      (c.chosenColor === undefined || c.chosenColor === card.chosenColor)
-    );
+    const index = myHand.findIndex(c => cardsAreEqual(c, card));
     if (index !== -1) myHand.splice(index, 1);
     renderHand();
   }
 
   myTurn = socket.id === nextPlayer;
   canDraw = true;
-
-  statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
+  statusDiv.textContent = myTurn
+    ? `Your turn! (Current color: ${currentColor})`
+    : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn || !canDraw;
 });
 
 socket.on('nextTurn', next => {
   myTurn = socket.id === next;
   canDraw = true;
-
-  statusDiv.textContent = myTurn ? `Your turn! (Current color: ${currentColor})` : `Waiting... (Current color: ${currentColor})`;
+  statusDiv.textContent = myTurn
+    ? `Your turn! (Current color: ${currentColor})`
+    : `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = !myTurn || !canDraw;
 });
 
@@ -138,10 +134,7 @@ function addCard(card) {
   img.style.width = '80px';
   img.style.height = '120px';
 
-  let imageName = getImageName(card);
-
-  img.src = `cards/${imageName}.png`;
-
+  img.src = `cards/${getImageName(card)}.png`;
   el.appendChild(img);
 
   el.onclick = () => {
@@ -173,16 +166,23 @@ function updateDiscard(card) {
   img.style.width = '80px';
   img.style.height = '120px';
 
-  let imageName = getImageName(card);
-
-  img.src = `cards/${imageName}.png`;
-
+  img.src = `cards/${getImageName(card)}.png`;
   el.appendChild(img);
   discardDiv.appendChild(el);
 }
 
+// ✅ FIXED: safe comparison for wilds with chosenColor
+function cardsAreEqual(a, b) {
+  return (
+    a.color === b.color &&
+    a.value === b.value &&
+    (a.chosenColor === b.chosenColor || !a.chosenColor || !b.chosenColor)
+  );
+}
+
+// ✅ Updated for capitalized image names
 function getImageName(card) {
-  let colorMap = {
+  const colorMap = {
     blue: 'Blue',
     green: 'Green',
     red: 'Red',
@@ -190,15 +190,11 @@ function getImageName(card) {
   };
 
   if (card.color === 'wild') {
-    if (card.value === 'wild') {
-      return 'Wild_Card_Change_Colour';
-    } else if (card.value === '+4') {
-      return 'Wild_Card_Draw_4';
-    }
+    return card.value === '+4'
+      ? 'Wild_Card_Draw_4'
+      : 'Wild_Card_Change_Colour';
   } else {
     let valueName = card.value;
-
-    // Map special names to match your image pack
     if (valueName === 'skip') valueName = 'Skip';
     if (valueName === 'reverse') valueName = 'Reverse';
     if (valueName === '+2') valueName = 'Draw_2';
