@@ -74,10 +74,21 @@ socket.on('cardDrawn', cards => {
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
-  currentColor = discardTop.color;
 
+  // ✅ Correct handling of currentColor with wild:
+  if (discardTop.color === 'wild' && discardTop.chosenColor) {
+    currentColor = discardTop.chosenColor;
+  } else {
+    currentColor = discardTop.color;
+  }
+
+  // ✅ Correct removal of played card from my hand:
   if (playerId === socket.id) {
-    const index = myHand.findIndex(c => c.color === card.color && c.value === card.value);
+    const index = myHand.findIndex(c => 
+      c.color === card.color && 
+      c.value === card.value &&
+      (c.chosenColor === undefined || c.chosenColor === card.chosenColor)
+    );
     if (index !== -1) myHand.splice(index, 1);
     renderHand();
   }
