@@ -4,7 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const Feedback = require('./models/Feedback');
-const nodemailer = require('nodemailer');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -16,15 +16,6 @@ app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('✅ MongoDB connected for Feedback'))
   .catch(err => console.error('❌ MongoDB error:', err));
-
-// Nodemailer transporter (we will not use it for now, but leave it ready!)
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.FEEDBACK_EMAIL_USER,
-    pass: process.env.FEEDBACK_EMAIL_PASS
-  }
-});
 
 let rooms = {};
 
@@ -74,6 +65,8 @@ function playAI(roomId) {
   const playable = aiHand.find(c => isPlayable(c, topCard, currentColor));
 
   setTimeout(() => {
+    if (!room.started) return; // safeguard!
+
     if (playable) {
       if (playable.color === 'wild') {
         const colors = ['red', 'green', 'blue', 'yellow'];
@@ -96,18 +89,19 @@ function playAI(roomId) {
         discardTop: discardTop,
         playerId: 'AI'
       });
+
+      io.to(roomId).emit('updateAIHandCount', aiHand.length);
+
+      if (aiHand.length === 0) {
+        io.to(roomId).emit('gameEnd', 'AI');
+        room.started = false;
+        return;
+      }
     } else {
       const drawn = room.deck.pop();
       aiHand.push(drawn);
       io.to(roomId).emit('cardDrawn', [drawn]);
-    }
-
-    io.to(roomId).emit('updateAIHandCount', aiHand.length);
-
-    if (aiHand.length === 0) {
-      io.to(roomId).emit('gameEnd', 'AI');
-      room.started = false;
-      return;
+      io.to(roomId).emit('updateAIHandCount', aiHand.length);
     }
 
     room.turnOrder.push(room.turnOrder.shift());
@@ -248,7 +242,7 @@ function startGame(roomId) {
   }
 }
 
-// === Feedback route ===
+// === Feedback API ===
 app.post('/feedback', async (req, res) => {
   const { name, email, message } = req.body;
 
@@ -259,25 +253,6 @@ app.post('/feedback', async (req, res) => {
   try {
     const fb = new Feedback({ name, email, message });
     await fb.save();
-
-    // Commented out email send:
-    /*
-    const mailOptions = {
-      from: process.env.FEEDBACK_EMAIL_USER,
-      to: 'dhruvbajaj3000@gmail.com',
-      subject: 'New Feedback Received',
-      text: `Name: ${name}\nEmail: ${email}\nMessage:\n${message}`
-    };
-
-    transporter.sendMail(mailOptions, (err, info) => {
-      if (err) {
-        console.error('❌ Email send error:', err);
-      } else {
-        console.log('✅ Feedback email sent:', info.response);
-      }
-    });
-    */
-
     res.json({ success: true });
   } catch (err) {
     console.error('❌ Feedback save error:', err);
@@ -285,7 +260,7 @@ app.post('/feedback', async (req, res) => {
   }
 });
 
-// === Feedback list page ===
+// === Feedback List Page ===
 app.get('/feedback-list', async (req, res) => {
   try {
     const feedbacks = await Feedback.find().sort({ createdAt: -1 });
