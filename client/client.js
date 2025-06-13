@@ -69,7 +69,7 @@ socket.on('hand', cards => {
 socket.on('cardDrawn', cards => {
   myHand = myHand.concat(cards);
   renderHand();
-  canDraw = false;
+  // DO NOT SET canDraw here anymore — nextTurn controls it!
 });
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
@@ -171,7 +171,7 @@ function updateDiscard(card) {
   discardDiv.appendChild(el);
 }
 
-// ✅ FIXED: safe comparison for wilds with chosenColor
+// ✅ Safe comparison for wilds with chosenColor
 function cardsAreEqual(a, b) {
   return (
     a.color === b.color &&
@@ -180,7 +180,7 @@ function cardsAreEqual(a, b) {
   );
 }
 
-// ✅ Updated for capitalized image names
+// ✅ Updated for your capitalized image names
 function getImageName(card) {
   const colorMap = {
     blue: 'Blue',
