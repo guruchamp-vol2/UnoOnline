@@ -46,6 +46,61 @@ function isPlayable(card, topCard, currentColor) {
   );
 }
 
+function playAI(roomId) {
+  const room = rooms[roomId];
+  if (!room || !room.started) return;
+
+  const aiHand = room.players['AI'];
+  const topCard = room.discard[room.discard.length - 1];
+  const currentColor = topCard.chosenColor || topCard.color;
+  const playable = aiHand.find(c => isPlayable(c, topCard, currentColor));
+
+  setTimeout(() => {
+    if (playable) {
+      if (playable.color === 'wild') {
+        const colors = ['red', 'green', 'blue', 'yellow'];
+        const chosenColor = colors[Math.floor(Math.random() * colors.length)];
+        playable.chosenColor = chosenColor;
+        io.to(roomId).emit('aiDeclaredColor', chosenColor);
+      }
+
+      room.discard.push(playable);
+      aiHand.splice(aiHand.indexOf(playable), 1);
+
+      const discardTop = { ...playable };
+      if (playable.color === 'wild' && playable.chosenColor) {
+        discardTop.chosenColor = playable.chosenColor;
+      }
+
+      io.to(roomId).emit('cardPlayed', {
+        card: discardTop,
+        nextPlayer: room.turnOrder[0],
+        discardTop: discardTop,
+        playerId: 'AI'
+      });
+    } else {
+      const drawn = room.deck.pop();
+      aiHand.push(drawn);
+      io.to(roomId).emit('cardDrawn', [drawn]);
+    }
+
+    io.to(roomId).emit('updateAIHandCount', aiHand.length);
+
+    if (aiHand.length === 0) {
+      io.to(roomId).emit('gameEnd', 'AI');
+      room.started = false;
+      return;
+    }
+
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
+    }
+  }, 1000);
+}
+
 io.on('connection', socket => {
   socket.on('joinGame', ({ roomId, name, vsAI }) => {
     if (!rooms[roomId]) {
@@ -54,11 +109,7 @@ io.on('connection', socket => {
         turnOrder: [],
         deck: createDeck(),
         discard: [],
-        started: false,
-        currentColor: null,
-        pendingDraw: 0,
-        skipNextTurn: false,
-        reversed: false
+        started: false
       };
     }
 
@@ -84,27 +135,32 @@ io.on('connection', socket => {
 
     const playerHand = room.players[socket.id];
     const topCard = room.discard[room.discard.length - 1];
+    const currentColor = topCard.chosenColor || topCard.color;
 
-    if (!isPlayable(card, topCard, room.currentColor)) {
+    if (!isPlayable(card, topCard, currentColor)) {
       io.to(socket.id).emit('illegalMove');
       return;
     }
 
     if (card.color === 'wild' && card.chosenColor) {
-      card.color = card.chosenColor;
-      delete card.chosenColor;
-      room.currentColor = card.color;
-    } else {
-      room.currentColor = card.color;
+      io.to(roomId).emit('aiDeclaredColor', card.chosenColor);
     }
 
     room.discard.push(card);
-    playerHand.splice(playerHand.findIndex(c => c.color === card.color && c.value === card.value), 1);
+    playerHand.splice(playerHand.findIndex(c =>
+      c.color === card.color &&
+      c.value === card.value
+    ), 1);
+
+    const discardTop = { ...card };
+    if (card.color === 'wild' && card.chosenColor) {
+      discardTop.chosenColor = card.chosenColor;
+    }
 
     io.to(roomId).emit('cardPlayed', {
-      card,
+      card: discardTop,
       nextPlayer: room.turnOrder[0],
-      discardTop: room.discard[room.discard.length - 1],
+      discardTop: discardTop,
       playerId: socket.id
     });
 
@@ -112,26 +168,6 @@ io.on('connection', socket => {
       io.to(roomId).emit('gameEnd', socket.id);
       room.started = false;
       return;
-    }
-
-    if (room.players['AI']) {
-      io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-    }
-
-    // Handle special cards
-    if (card.value === '+4') {
-      room.pendingDraw += 4;
-      handleDrawAndSkip(roomId);
-      return;
-    } else if (card.value === '+2') {
-      room.pendingDraw += 2;
-      handleDrawAndSkip(roomId);
-      return;
-    } else if (card.value === 'skip') {
-      room.skipNextTurn = true;
-    } else if (card.value === 'reverse') {
-      room.reversed = !room.reversed;
-      room.turnOrder.reverse();
     }
 
     room.turnOrder.push(room.turnOrder.shift());
@@ -146,42 +182,15 @@ io.on('connection', socket => {
     const room = rooms[roomId];
     if (!room || room.turnOrder[0] !== socket.id) return;
 
-    if (room.pendingDraw > 0) {
-      const drawnCards = [];
-      for (let i = 0; i < room.pendingDraw; i++) {
-        if (room.deck.length === 0) room.deck = createDeck();
-        drawnCards.push(room.deck.pop());
-      }
-      room.players[socket.id] = room.players[socket.id].concat(drawnCards);
-      io.to(socket.id).emit('cardDrawn', drawnCards);
-      room.pendingDraw = 0;
+    const drawn = room.deck.pop();
+    room.players[socket.id].push(drawn);
+    io.to(socket.id).emit('cardDrawn', [drawn]);
 
-      if (room.players['AI']) {
-        io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-      }
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
-      room.turnOrder.push(room.turnOrder.shift());
-      io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-      if (room.turnOrder[0] === 'AI') {
-        playAI(roomId);
-      }
-
-    } else {
-      const drawn = room.deck.pop();
-      room.players[socket.id].push(drawn);
-      io.to(socket.id).emit('cardDrawn', [drawn]);
-
-      if (room.players['AI']) {
-        io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-      }
-
-      room.turnOrder.push(room.turnOrder.shift());
-      io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-      if (room.turnOrder[0] === 'AI') {
-        playAI(roomId);
-      }
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
     }
   });
 
@@ -200,118 +209,11 @@ io.on('connection', socket => {
   });
 });
 
-function playAI(roomId) {
-  const room = rooms[roomId];
-  if (!room || !room.started) return;
-
-  const aiHand = room.players['AI'];
-  const topCard = room.discard[room.discard.length - 1];
-  const playable = aiHand.find(c => isPlayable(c, topCard, room.currentColor));
-
-  setTimeout(() => {
-    if (playable) {
-      if (playable.color === 'wild') {
-        const colors = ['red', 'green', 'blue', 'yellow'];
-        playable.chosenColor = colors[Math.floor(Math.random() * colors.length)];
-        room.currentColor = playable.chosenColor;
-        io.to(roomId).emit('aiDeclaredColor', playable.chosenColor);
-      } else {
-        room.currentColor = playable.color;
-      }
-
-      room.discard.push(playable);
-      aiHand.splice(aiHand.indexOf(playable), 1);
-
-      io.to(roomId).emit('cardPlayed', {
-        card: playable,
-        nextPlayer: room.turnOrder[0],
-        discardTop: room.discard[room.discard.length - 1],
-        playerId: 'AI'
-      });
-
-      if (aiHand.length === 0) {
-        io.to(roomId).emit('gameEnd', 'AI');
-        room.started = false;
-        return;
-      }
-
-      io.to(roomId).emit('updateAIHandCount', aiHand.length);
-
-      if (playable.value === '+4') {
-        room.pendingDraw += 4;
-        handleDrawAndSkip(roomId);
-        return;
-      } else if (playable.value === '+2') {
-        room.pendingDraw += 2;
-        handleDrawAndSkip(roomId);
-        return;
-      } else if (playable.value === 'skip') {
-        room.skipNextTurn = true;
-      } else if (playable.value === 'reverse') {
-        room.reversed = !room.reversed;
-        room.turnOrder.reverse();
-      }
-
-      room.turnOrder.push(room.turnOrder.shift());
-      io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-      if (room.turnOrder[0] === 'AI') {
-        playAI(roomId);
-      }
-
-    } else {
-      const drawn = room.deck.pop();
-      aiHand.push(drawn);
-      io.to(roomId).emit('cardDrawn', [drawn]);
-      io.to(roomId).emit('updateAIHandCount', aiHand.length);
-
-      room.turnOrder.push(room.turnOrder.shift());
-      io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-      if (room.turnOrder[0] === 'AI') {
-        playAI(roomId);
-      }
-    }
-  }, 1000);
-}
-
-function handleDrawAndSkip(roomId) {
-  const room = rooms[roomId];
-  const nextPlayer = room.turnOrder[1];
-  const drawnCards = [];
-
-  for (let i = 0; i < room.pendingDraw; i++) {
-    if (room.deck.length === 0) room.deck = createDeck();
-    drawnCards.push(room.deck.pop());
-  }
-
-  room.players[nextPlayer] = room.players[nextPlayer].concat(drawnCards);
-  io.to(nextPlayer).emit('cardDrawn', drawnCards);
-  room.pendingDraw = 0;
-
-  if (room.players['AI']) {
-    io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-  }
-
-  room.turnOrder.push(room.turnOrder.shift());
-  room.turnOrder.push(room.turnOrder.shift());
-
-  io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-  if (room.turnOrder[0] === 'AI') {
-    playAI(roomId);
-  }
-}
-
 function startGame(roomId) {
   const room = rooms[roomId];
   room.deck = createDeck();
   room.discard = [room.deck.pop()];
   room.started = true;
-  room.currentColor = room.discard[0].color;
-  room.pendingDraw = 0;
-  room.skipNextTurn = false;
-  room.reversed = false;
 
   for (const playerId of Object.keys(room.players)) {
     room.players[playerId] = room.deck.splice(-7);
@@ -320,12 +222,8 @@ function startGame(roomId) {
     }
   }
 
-  io.to(roomId).emit('gameStart', { discardTop: room.discard[room.discard.length - 1], color: room.currentColor });
+  io.to(roomId).emit('gameStart', { discardTop: room.discard[room.discard.length - 1] });
   io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-  if (room.players['AI']) {
-    io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-  }
 
   if (room.turnOrder[0] === 'AI') {
     playAI(roomId);
