@@ -59,6 +59,7 @@ socket.on('gameStart', ({ discardTop, color }) => {
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
   currentColor = color || discardTop.chosenColor || discardTop.color;
+  updateStatus();
 });
 
 socket.on('hand', cards => {
@@ -69,7 +70,6 @@ socket.on('hand', cards => {
 socket.on('cardDrawn', cards => {
   myHand = myHand.concat(cards);
   renderHand();
-  // DO NOT SET canDraw here anymore — nextTurn controls it!
 });
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
@@ -89,25 +89,25 @@ socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
 
   myTurn = socket.id === nextPlayer;
   canDraw = true;
-  statusDiv.textContent = myTurn
-    ? `Your turn! (Current color: ${currentColor})`
-    : `Waiting... (Current color: ${currentColor})`;
-  drawBtn.disabled = !myTurn || !canDraw;
+  updateStatus();
 });
 
 socket.on('nextTurn', next => {
   myTurn = socket.id === next;
   canDraw = true;
-  statusDiv.textContent = myTurn
-    ? `Your turn! (Current color: ${currentColor})`
-    : `Waiting... (Current color: ${currentColor})`;
-  drawBtn.disabled = !myTurn || !canDraw;
+  updateStatus();
 });
 
 socket.on('illegalMove', () => alert('Illegal move!'));
 
 socket.on('gameEnd', winner => {
-  alert(winner === socket.id ? 'You win!' : (winner === 'AI' ? 'AI wins!' : 'You lose...'));
+  if (winner === socket.id) {
+    alert('🎉 You win!');
+  } else if (winner === 'AI') {
+    alert('🤖 AI wins!');
+  } else {
+    alert('You lose...');
+  }
   playAgainBtn.classList.remove('hidden');
 });
 
@@ -117,7 +117,7 @@ socket.on('updateAIHandCount', count => {
 
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
-  statusDiv.textContent = `AI chose ${color} color!`;
+  updateStatus();
 });
 
 function renderHand() {
@@ -171,6 +171,13 @@ function updateDiscard(card) {
   discardDiv.appendChild(el);
 }
 
+function updateStatus() {
+  statusDiv.textContent = myTurn
+    ? `Your turn! (Current color: ${currentColor})`
+    : `Waiting... (Current color: ${currentColor})`;
+  drawBtn.disabled = !myTurn || !canDraw;
+}
+
 function cardsAreEqual(a, b) {
   return (
     a.color === b.color &&
@@ -201,7 +208,7 @@ function getImageName(card) {
   }
 }
 
-// === Feedback submit ===
+// === Feedback Submit ===
 document.getElementById('submitFeedback').onclick = () => {
   const name = document.getElementById('fbName').value.trim();
   const email = document.getElementById('fbEmail').value.trim();
@@ -219,14 +226,14 @@ document.getElementById('submitFeedback').onclick = () => {
     },
     body: JSON.stringify({ name, email, message })
   })
-  .then(res => res.json())
-  .then(data => {
-    document.getElementById('feedbackStatus').innerText = 'Feedback submitted! Thank you.';
-    document.getElementById('fbName').value = '';
-    document.getElementById('fbEmail').value = '';
-    document.getElementById('fbMessage').value = '';
-  })
-  .catch(err => {
-    document.getElementById('feedbackStatus').innerText = 'Error submitting feedback.';
-  });
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('feedbackStatus').innerText = 'Feedback submitted! Thank you.';
+      document.getElementById('fbName').value = '';
+      document.getElementById('fbEmail').value = '';
+      document.getElementById('fbMessage').value = '';
+    })
+    .catch(err => {
+      document.getElementById('feedbackStatus').innerText = 'Error submitting feedback.';
+    });
 };
