@@ -33,7 +33,7 @@ playAIBtn.onclick = () => {
 };
 
 startGameBtn.onclick = () => {
-  socket.emit('startGameNow', currentRoom); // ✅ Fixed event name
+  socket.emit('startGame', currentRoom); // ✅ FIXED: Correct event name
   startGameBtn.classList.add('hidden');
 };
 
@@ -92,11 +92,7 @@ socket.on('cardDrawn', cards => {
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
 
-  if (discardTop.color === 'wild' && discardTop.chosenColor) {
-    currentColor = discardTop.chosenColor;
-  } else {
-    currentColor = discardTop.color;
-  }
+  currentColor = discardTop.chosenColor || discardTop.color;
 
   if (playerId === socket.id) {
     const index = myHand.findIndex(c => cardsAreEqual(c, card));
@@ -144,11 +140,10 @@ function addCard(card) {
   const el = document.createElement('div');
   el.className = 'card';
 
-  let img = document.createElement('img');
+  const img = document.createElement('img');
   img.className = 'card-img';
   img.style.width = '80px';
   img.style.height = '120px';
-
   img.src = `cards/${getImageName(card)}.png`;
   el.appendChild(img);
 
@@ -175,12 +170,12 @@ function updateDiscard(card) {
   const el = document.createElement('div');
   el.className = 'card';
 
-  let img = document.createElement('img');
+  const img = document.createElement('img');
   img.className = 'card-img';
   img.style.width = '80px';
   img.style.height = '120px';
-
   img.src = `cards/${getImageName(card)}.png`;
+
   el.appendChild(img);
   discardDiv.appendChild(el);
 }
@@ -233,14 +228,14 @@ document.getElementById('submitFeedback').onclick = () => {
     },
     body: JSON.stringify({ name, email, message })
   })
-  .then(res => res.json())
-  .then(data => {
-    feedbackStatus.innerText = 'Feedback submitted! Thank you.';
-    document.getElementById('fbName').value = '';
-    document.getElementById('fbEmail').value = '';
-    document.getElementById('fbMessage').value = '';
-  })
-  .catch(err => {
-    feedbackStatus.innerText = 'Error submitting feedback.';
-  });
+    .then(res => res.json())
+    .then(data => {
+      feedbackStatus.innerText = 'Feedback submitted! Thank you.';
+      document.getElementById('fbName').value = '';
+      document.getElementById('fbEmail').value = '';
+      document.getElementById('fbMessage').value = '';
+    })
+    .catch(err => {
+      feedbackStatus.innerText = 'Error submitting feedback.';
+    });
 };
