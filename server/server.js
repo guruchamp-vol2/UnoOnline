@@ -58,6 +58,7 @@ function isPlayable(card, topCard, currentColor) {
     card.value === topCard.value
   );
 }
+
 function drawCards(room, playerId, count) {
   const cards = [];
   for (let i = 0; i < count; i++) {
@@ -69,7 +70,6 @@ function drawCards(room, playerId, count) {
     io.to(playerId).emit('cardDrawn', cards);
   }
 }
-
 function playAI(roomId) {
   const room = rooms[roomId];
   if (!room || !room.started) return;
@@ -94,6 +94,7 @@ function playAI(roomId) {
       }
 
       room.discard.push(playable);
+
       io.to(roomId).emit('cardPlayed', {
         card: { ...playable },
         nextPlayer: room.turnOrder[0],
@@ -136,7 +137,9 @@ function playAI(roomId) {
     io.to(roomId).emit('updateAIHandCount', aiHand.length);
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
-    if (room.turnOrder[0] === 'AI') playAI(roomId);
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
+    }
   }, 800);
 }
 io.on('connection', socket => {
@@ -166,9 +169,7 @@ io.on('connection', socket => {
       rooms[roomId].turnOrder.push('AI');
     }
 
-    io.emit('roomList', Object.fromEntries(
-      Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])
-    ));
+    io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
   });
 
   socket.on('startGame', roomId => {
@@ -190,11 +191,8 @@ io.on('connection', socket => {
       if (room.players[socket.id]) {
         delete room.players[socket.id];
         room.turnOrder = room.turnOrder.filter(id => id !== socket.id);
-        if (room.turnOrder.length === 0) {
-          delete rooms[roomId];
-        } else {
-          io.to(roomId).emit('roomList', rooms[roomId]);
-        }
+        if (room.turnOrder.length === 0) delete rooms[roomId];
+        else io.to(roomId).emit('roomList', rooms[roomId]);
       }
     }
   });
@@ -236,12 +234,11 @@ app.get('/feedback-list', async (req, res) => {
     res.status(500).send('Error loading feedback.');
   }
 });
-
 function startGame(roomId) {
   const room = rooms[roomId];
   room.deck = createDeck();
 
-  // Ensure valid starting card
+  // Ensure the first discard is not a wild, +2, +4, skip, or reverse
   do {
     room.discard = [room.deck.pop()];
   } while (['+2', '+4', 'skip', 'reverse', 'wild'].includes(room.discard[0].value));
