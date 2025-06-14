@@ -22,6 +22,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 let rooms = {};
+
 function createDeck() {
   const colors = ['red', 'green', 'blue', 'yellow'];
   const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', '+2'];
@@ -57,7 +58,6 @@ function isPlayable(card, topCard, currentColor) {
     card.value === topCard.value
   );
 }
-
 function drawCards(room, playerId, count) {
   const cards = [];
   for (let i = 0; i < count; i++) {
@@ -69,6 +69,7 @@ function drawCards(room, playerId, count) {
     io.to(playerId).emit('cardDrawn', cards);
   }
 }
+
 function playAI(roomId) {
   const room = rooms[roomId];
   if (!room || !room.started) return;
@@ -93,7 +94,6 @@ function playAI(roomId) {
       }
 
       room.discard.push(playable);
-
       io.to(roomId).emit('cardPlayed', {
         card: { ...playable },
         nextPlayer: room.turnOrder[0],
@@ -107,7 +107,6 @@ function playAI(roomId) {
         return;
       }
 
-      // Card effects
       if (playable.value === '+2') {
         const target = room.turnOrder[1];
         drawCards(room, target, 2);
@@ -137,10 +136,8 @@ function playAI(roomId) {
     io.to(roomId).emit('updateAIHandCount', aiHand.length);
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
-    if (room.turnOrder[0] === 'AI') {
-      playAI(roomId);
-    }
-  }, 800); // slightly faster AI response
+    if (room.turnOrder[0] === 'AI') playAI(roomId);
+  }, 800);
 }
 io.on('connection', socket => {
   socket.on('joinGame', ({ roomId, name, vsAI }) => {
@@ -169,7 +166,9 @@ io.on('connection', socket => {
       rooms[roomId].turnOrder.push('AI');
     }
 
-    io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
+    io.emit('roomList', Object.fromEntries(
+      Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])
+    ));
   });
 
   socket.on('startGame', roomId => {
@@ -191,13 +190,15 @@ io.on('connection', socket => {
       if (room.players[socket.id]) {
         delete room.players[socket.id];
         room.turnOrder = room.turnOrder.filter(id => id !== socket.id);
-        if (room.turnOrder.length === 0) delete rooms[roomId];
-        else io.to(roomId).emit('roomList', rooms[roomId]);
+        if (room.turnOrder.length === 0) {
+          delete rooms[roomId];
+        } else {
+          io.to(roomId).emit('roomList', rooms[roomId]);
+        }
       }
     }
   });
 });
-
 // === Feedback API ===
 app.post('/feedback', async (req, res) => {
   const { name, email, message } = req.body;
@@ -235,11 +236,12 @@ app.get('/feedback-list', async (req, res) => {
     res.status(500).send('Error loading feedback.');
   }
 });
+
 function startGame(roomId) {
   const room = rooms[roomId];
   room.deck = createDeck();
 
-  // Ensure the first discard is not a wild, +2, +4, skip, or reverse
+  // Ensure valid starting card
   do {
     room.discard = [room.deck.pop()];
   } while (['+2', '+4', 'skip', 'reverse', 'wild'].includes(room.discard[0].value));
