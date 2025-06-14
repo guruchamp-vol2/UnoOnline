@@ -122,10 +122,9 @@ function playAI(roomId) {
         room.turnOrder.reverse();
       }
 
-      room.turnOrder.push(room.turnOrder.shift());
-
+      // Apply extraDraw BEFORE shifting turn
+      const nextPlayer = room.turnOrder[0];
       if (extraDraw > 0) {
-        const nextPlayer = room.turnOrder[0];
         const drawnCards = [];
         for (let i = 0; i < extraDraw; i++) {
           drawnCards.push(room.deck.pop());
@@ -137,8 +136,9 @@ function playAI(roomId) {
           room.players['AI'].push(...drawnCards);
           io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
         }
-        room.turnOrder.push(room.turnOrder.shift());
       }
+
+      room.turnOrder.push(room.turnOrder.shift());
 
       if (skipNext) {
         room.turnOrder.push(room.turnOrder.shift());
@@ -173,7 +173,8 @@ io.on('connection', socket => {
         turnOrder: [],
         deck: createDeck(),
         discard: [],
-        started: false
+        started: false,
+        host: socket.id
       };
     }
 
@@ -183,12 +184,17 @@ io.on('connection', socket => {
 
     io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
 
+    io.to(roomId).emit('hostInfo', rooms[roomId].host);
+
     if (vsAI && !rooms[roomId].players['AI']) {
       rooms[roomId].players['AI'] = [];
       rooms[roomId].turnOrder.push('AI');
+      startGame(roomId);
     }
+  });
 
-    if (Object.keys(rooms[roomId].players).length >= 2 || vsAI) {
+  socket.on('startGame', roomId => {
+    if (rooms[roomId] && rooms[roomId].host === socket.id && !rooms[roomId].started) {
       startGame(roomId);
     }
   });
@@ -240,10 +246,9 @@ io.on('connection', socket => {
       room.turnOrder.reverse();
     }
 
-    room.turnOrder.push(room.turnOrder.shift());
-
+    // Apply extraDraw BEFORE shifting turn
+    const nextPlayer = room.turnOrder[0];
     if (extraDraw > 0) {
-      const nextPlayer = room.turnOrder[0];
       const drawnCards = [];
       for (let i = 0; i < extraDraw; i++) {
         drawnCards.push(room.deck.pop());
@@ -255,8 +260,9 @@ io.on('connection', socket => {
         room.players['AI'].push(...drawnCards);
         io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
       }
-      room.turnOrder.push(room.turnOrder.shift());
     }
+
+    room.turnOrder.push(room.turnOrder.shift());
 
     if (skipNext) {
       room.turnOrder.push(room.turnOrder.shift());
@@ -294,7 +300,13 @@ io.on('connection', socket => {
       if (room.players[socket.id]) {
         delete room.players[socket.id];
         room.turnOrder = room.turnOrder.filter(id => id !== socket.id);
+
+        if (room.host === socket.id && Object.keys(room.players).length > 0) {
+          room.host = Object.keys(room.players)[0];
+        }
+
         io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, r]) => [id, Object.keys(r.players).length])));
+        io.to(roomId).emit('hostInfo', room.host);
       }
     }
   });
