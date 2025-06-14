@@ -33,7 +33,7 @@ playAIBtn.onclick = () => {
 };
 
 startGameBtn.onclick = () => {
-  socket.emit('startGame', currentRoom);
+  socket.emit('startGameNow', currentRoom); // ✅ Fixed event name
   startGameBtn.classList.add('hidden');
 };
 
@@ -84,11 +84,9 @@ socket.on('hand', cards => {
 socket.on('cardDrawn', cards => {
   myHand = myHand.concat(cards);
   renderHand();
-
-  // After drawing, end turn
   myTurn = false;
-  statusDiv.textContent = `Waiting... (Current color: ${currentColor})`;
   drawBtn.disabled = true;
+  statusDiv.textContent = `Waiting... (Current color: ${currentColor})`;
 });
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
