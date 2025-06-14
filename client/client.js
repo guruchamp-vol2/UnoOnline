@@ -21,19 +21,25 @@ let myTurn = false;
 let myHand = [];
 let currentColor = null;
 let isHost = false;
+let isVsAI = false;
 
 joinBtn.onclick = () => {
   currentRoom = roomInput.value;
+  isVsAI = false;
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
 };
 
 playAIBtn.onclick = () => {
+  if (playAIBtn.disabled) return; // prevent multiple AI room joins
+  playAIBtn.disabled = true;
+
   currentRoom = 'AI-' + Date.now();
+  isVsAI = true;
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value, vsAI: true });
 };
 
 startGameBtn.onclick = () => {
-  socket.emit('startGame', currentRoom); // ✅ FIXED: Correct event name
+  socket.emit('startGame', currentRoom);
   startGameBtn.classList.add('hidden');
 };
 
@@ -49,24 +55,9 @@ playAgainBtn.onclick = () => {
   currentColor = null;
 };
 
-socket.on('roomList', rooms => {
-  roomListDiv.innerHTML = Object.keys(rooms).map(r =>
-    `<div class="room-item" onclick="joinRoom('${r}')">${r} (${rooms[r]} player(s))</div>`
-  ).join('');
-});
-
-function joinRoom(roomId) {
-  currentRoom = roomId;
-  socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
-}
-
 socket.on('hostInfo', hostId => {
   isHost = (socket.id === hostId);
-  if (isHost) {
-    startGameBtn.classList.remove('hidden');
-  } else {
-    startGameBtn.classList.add('hidden');
-  }
+  startGameBtn.classList.toggle('hidden', !isHost);
 });
 
 socket.on('gameStart', ({ discardTop, color }) => {
@@ -91,7 +82,6 @@ socket.on('cardDrawn', cards => {
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
-
   currentColor = discardTop.chosenColor || discardTop.color;
 
   if (playerId === socket.id) {
@@ -101,26 +91,21 @@ socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   }
 
   myTurn = socket.id === nextPlayer;
+  drawBtn.disabled = !myTurn;
   statusDiv.textContent = myTurn
     ? `Your turn! (Current color: ${currentColor})`
     : `Waiting... (Current color: ${currentColor})`;
-  drawBtn.disabled = !myTurn;
 });
 
 socket.on('nextTurn', next => {
   myTurn = socket.id === next;
+  drawBtn.disabled = !myTurn;
   statusDiv.textContent = myTurn
     ? `Your turn! (Current color: ${currentColor})`
     : `Waiting... (Current color: ${currentColor})`;
-  drawBtn.disabled = !myTurn;
 });
 
 socket.on('illegalMove', () => alert('Illegal move!'));
-
-socket.on('gameEnd', winner => {
-  alert(winner === socket.id ? 'You win!' : (winner === 'AI' ? 'AI wins!' : 'You lose...'));
-  playAgainBtn.classList.remove('hidden');
-});
 
 socket.on('updateAIHandCount', count => {
   aiHandCountDiv.textContent = `AI has ${count} card${count !== 1 ? 's' : ''}`;
@@ -129,6 +114,12 @@ socket.on('updateAIHandCount', count => {
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
   statusDiv.textContent = `AI chose ${color} color!`;
+});
+
+socket.on('gameEnd', winner => {
+  alert(winner === socket.id ? 'You win!' : winner === 'AI' ? 'AI wins!' : 'You lose...');
+  playAgainBtn.classList.remove('hidden');
+  playAIBtn.disabled = false; // re-enable AI button after game
 });
 
 function renderHand() {
@@ -140,10 +131,11 @@ function addCard(card) {
   const el = document.createElement('div');
   el.className = 'card';
 
-  const img = document.createElement('img');
+  let img = document.createElement('img');
   img.className = 'card-img';
   img.style.width = '80px';
   img.style.height = '120px';
+
   img.src = `cards/${getImageName(card)}.png`;
   el.appendChild(img);
 
@@ -170,12 +162,12 @@ function updateDiscard(card) {
   const el = document.createElement('div');
   el.className = 'card';
 
-  const img = document.createElement('img');
+  let img = document.createElement('img');
   img.className = 'card-img';
   img.style.width = '80px';
   img.style.height = '120px';
-  img.src = `cards/${getImageName(card)}.png`;
 
+  img.src = `cards/${getImageName(card)}.png`;
   el.appendChild(img);
   discardDiv.appendChild(el);
 }
@@ -209,33 +201,3 @@ function getImageName(card) {
     return `${colorMap[card.color]}_${valueName}`;
   }
 }
-
-// === Feedback submission ===
-document.getElementById('submitFeedback').onclick = () => {
-  const name = document.getElementById('fbName').value.trim();
-  const email = document.getElementById('fbEmail').value.trim();
-  const message = document.getElementById('fbMessage').value.trim();
-
-  if (!name || !message) {
-    feedbackStatus.innerText = 'Please fill in required fields.';
-    return;
-  }
-
-  fetch('/feedback', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ name, email, message })
-  })
-    .then(res => res.json())
-    .then(data => {
-      feedbackStatus.innerText = 'Feedback submitted! Thank you.';
-      document.getElementById('fbName').value = '';
-      document.getElementById('fbEmail').value = '';
-      document.getElementById('fbMessage').value = '';
-    })
-    .catch(err => {
-      feedbackStatus.innerText = 'Error submitting feedback.';
-    });
-};
