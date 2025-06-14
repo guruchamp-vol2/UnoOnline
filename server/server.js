@@ -8,12 +8,16 @@ const Feedback = require('./models/Feedback');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+require('dotenv').config();
 
 app.use(express.static(path.join(__dirname, '..', 'client')));
 app.use(express.json());
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
   .then(() => console.log('✅ MongoDB connected for Feedback'))
   .catch(err => console.error('❌ MongoDB error:', err));
 
@@ -55,22 +59,21 @@ function isPlayable(card, topCard, currentColor) {
   );
 }
 
-function applyCardEffect(room, card) {
-  let extraDraw = 0;
-  let skipNext = false;
-  let reverseOrder = false;
-
-  if (card.value === '+2') {
-    extraDraw = 2;
-  } else if (card.value === '+4') {
-    extraDraw = 4;
-  } else if (card.value === 'skip') {
-    skipNext = true;
-  } else if (card.value === 'reverse') {
-    reverseOrder = true;
+function drawCards(room, playerId, count) {
+  const cards = [];
+  for (let i = 0; i < count; i++) {
+    const drawn = room.deck.pop();
+    room.players[playerId].push(drawn);
+    cards.push(drawn);
   }
+  if (playerId !== 'AI') {
+    io.to(playerId).emit('cardDrawn', cards);
+  }
+}
 
-  return { extraDraw, skipNext, reverseOrder };
+function skipNextPlayer(room) {
+  room.turnOrder.push(room.turnOrder.shift());
+  io.to(room.id).emit('nextTurn', room.turnOrder[0]);
 }
 
 function playAI(roomId) {
@@ -86,6 +89,8 @@ function playAI(roomId) {
     if (!room.started) return;
 
     if (playable) {
+      const index = aiHand.indexOf(playable);
+      aiHand.splice(index, 1);
       if (playable.color === 'wild') {
         const colors = ['red', 'green', 'blue', 'yellow'];
         const chosenColor = colors[Math.floor(Math.random() * colors.length)];
@@ -94,7 +99,6 @@ function playAI(roomId) {
       }
 
       room.discard.push(playable);
-      aiHand.splice(aiHand.indexOf(playable), 1);
 
       const discardTop = { ...playable };
       if (playable.color === 'wild' && playable.chosenColor) {
@@ -104,11 +108,9 @@ function playAI(roomId) {
       io.to(roomId).emit('cardPlayed', {
         card: discardTop,
         nextPlayer: room.turnOrder[0],
-        discardTop: discardTop,
+        discardTop,
         playerId: 'AI'
       });
-
-      io.to(roomId).emit('updateAIHandCount', aiHand.length);
 
       if (aiHand.length === 0) {
         io.to(roomId).emit('gameEnd', 'AI');
@@ -116,51 +118,33 @@ function playAI(roomId) {
         return;
       }
 
-      const { extraDraw, skipNext, reverseOrder } = applyCardEffect(room, playable);
-
-      if (reverseOrder) {
-        room.turnOrder.reverse();
-      }
-
-      // Apply extraDraw BEFORE shifting turn
-      const nextPlayer = room.turnOrder[0];
-      if (extraDraw > 0) {
-        const drawnCards = [];
-        for (let i = 0; i < extraDraw; i++) {
-          drawnCards.push(room.deck.pop());
-        }
-        if (nextPlayer !== 'AI') {
-          room.players[nextPlayer].push(...drawnCards);
-          io.to(nextPlayer).emit('cardDrawn', drawnCards);
-        } else {
-          room.players['AI'].push(...drawnCards);
-          io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-        }
-      }
-
-      room.turnOrder.push(room.turnOrder.shift());
-
-      if (skipNext) {
+      if (playable.value === '+2') {
+        const target = room.turnOrder[1];
+        drawCards(room, target, 2);
+        room.turnOrder.shift();
+        room.turnOrder.push(room.turnOrder.shift());
+      } else if (playable.value === '+4') {
+        const target = room.turnOrder[1];
+        drawCards(room, target, 4);
+        room.turnOrder.shift();
+        room.turnOrder.push(room.turnOrder.shift());
+      } else if (playable.value === 'skip' || playable.value === 'reverse') {
+        room.turnOrder.shift();
         room.turnOrder.push(room.turnOrder.shift());
       }
 
-      io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
-      if (room.turnOrder[0] === 'AI') {
-        playAI(roomId);
-      }
     } else {
       const drawn = room.deck.pop();
       aiHand.push(drawn);
-      io.to(roomId).emit('cardDrawn', [drawn]);
       io.to(roomId).emit('updateAIHandCount', aiHand.length);
+    }
 
-      room.turnOrder.push(room.turnOrder.shift());
-      io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+    io.to(roomId).emit('updateAIHandCount', aiHand.length);
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
-      if (room.turnOrder[0] === 'AI') {
-        playAI(roomId);
-      }
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
     }
   }, 1000);
 }
@@ -169,9 +153,10 @@ io.on('connection', socket => {
   socket.on('joinGame', ({ roomId, name, vsAI }) => {
     if (!rooms[roomId]) {
       rooms[roomId] = {
+        id: roomId,
         players: {},
         turnOrder: [],
-        deck: createDeck(),
+        deck: [],
         discard: [],
         started: false,
         host: socket.id
@@ -181,22 +166,20 @@ io.on('connection', socket => {
     rooms[roomId].players[socket.id] = [];
     rooms[roomId].turnOrder.push(socket.id);
     socket.join(roomId);
-
-    io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
-
-    io.to(roomId).emit('hostInfo', rooms[roomId].host);
+    io.to(socket.id).emit('hostInfo', rooms[roomId].host);
 
     if (vsAI && !rooms[roomId].players['AI']) {
       rooms[roomId].players['AI'] = [];
       rooms[roomId].turnOrder.push('AI');
-      startGame(roomId);
     }
+
+    io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
   });
 
   socket.on('startGame', roomId => {
-    if (rooms[roomId] && rooms[roomId].host === socket.id && !rooms[roomId].started) {
-      startGame(roomId);
-    }
+    const room = rooms[roomId];
+    if (!room || room.host !== socket.id) return;
+    startGame(roomId);
   });
 
   socket.on('playCard', ({ roomId, card }) => {
@@ -217,10 +200,7 @@ io.on('connection', socket => {
     }
 
     room.discard.push(card);
-    playerHand.splice(playerHand.findIndex(c =>
-      c.color === card.color &&
-      c.value === card.value
-    ), 1);
+    playerHand.splice(playerHand.findIndex(c => c.color === card.color && c.value === card.value), 1);
 
     const discardTop = { ...card };
     if (card.color === 'wild' && card.chosenColor) {
@@ -230,7 +210,7 @@ io.on('connection', socket => {
     io.to(roomId).emit('cardPlayed', {
       card: discardTop,
       nextPlayer: room.turnOrder[0],
-      discardTop: discardTop,
+      discardTop,
       playerId: socket.id
     });
 
@@ -240,34 +220,19 @@ io.on('connection', socket => {
       return;
     }
 
-    const { extraDraw, skipNext, reverseOrder } = applyCardEffect(room, card);
-
-    if (reverseOrder) {
-      room.turnOrder.reverse();
-    }
-
-    // Apply extraDraw BEFORE shifting turn
-    const nextPlayer = room.turnOrder[0];
-    if (extraDraw > 0) {
-      const drawnCards = [];
-      for (let i = 0; i < extraDraw; i++) {
-        drawnCards.push(room.deck.pop());
-      }
-      if (nextPlayer !== 'AI') {
-        room.players[nextPlayer].push(...drawnCards);
-        io.to(nextPlayer).emit('cardDrawn', drawnCards);
-      } else {
-        room.players['AI'].push(...drawnCards);
-        io.to(roomId).emit('updateAIHandCount', room.players['AI'].length);
-      }
+    if (card.value === '+2') {
+      const target = room.turnOrder[1];
+      drawCards(room, target, 2);
+      room.turnOrder.shift();
+    } else if (card.value === '+4') {
+      const target = room.turnOrder[1];
+      drawCards(room, target, 4);
+      room.turnOrder.shift();
+    } else if (card.value === 'skip' || card.value === 'reverse') {
+      room.turnOrder.shift();
     }
 
     room.turnOrder.push(room.turnOrder.shift());
-
-    if (skipNext) {
-      room.turnOrder.push(room.turnOrder.shift());
-    }
-
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
     if (room.turnOrder[0] === 'AI') {
@@ -279,10 +244,7 @@ io.on('connection', socket => {
     const room = rooms[roomId];
     if (!room || room.turnOrder[0] !== socket.id) return;
 
-    const drawn = room.deck.pop();
-    room.players[socket.id].push(drawn);
-    io.to(socket.id).emit('cardDrawn', [drawn]);
-
+    drawCards(room, socket.id, 1);
     room.turnOrder.push(room.turnOrder.shift());
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
@@ -300,13 +262,8 @@ io.on('connection', socket => {
       if (room.players[socket.id]) {
         delete room.players[socket.id];
         room.turnOrder = room.turnOrder.filter(id => id !== socket.id);
-
-        if (room.host === socket.id && Object.keys(room.players).length > 0) {
-          room.host = Object.keys(room.players)[0];
-        }
-
-        io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, r]) => [id, Object.keys(r.players).length])));
-        io.to(roomId).emit('hostInfo', room.host);
+        if (room.turnOrder.length === 0) delete rooms[roomId];
+        else io.to(roomId).emit('roomList', rooms[roomId]);
       }
     }
   });
@@ -315,7 +272,9 @@ io.on('connection', socket => {
 function startGame(roomId) {
   const room = rooms[roomId];
   room.deck = createDeck();
-  room.discard = [room.deck.pop()];
+  do {
+    room.discard = [room.deck.pop()];
+  } while (['+2', '+4', 'skip', 'reverse', 'wild'].includes(room.discard[0].value));
   room.started = true;
 
   for (const playerId of Object.keys(room.players)) {
@@ -351,7 +310,6 @@ app.post('/feedback', async (req, res) => {
   }
 });
 
-// === Feedback List Page ===
 app.get('/feedback-list', async (req, res) => {
   try {
     const feedbacks = await Feedback.find().sort({ createdAt: -1 });
@@ -363,15 +321,18 @@ app.get('/feedback-list', async (req, res) => {
           <strong>Name:</strong> ${fb.name} <br>
           <strong>Email:</strong> ${fb.email || 'N/A'} <br>
           <strong>Message:</strong> ${fb.message} <br>
-          <strong>Date:</strong> ${fb.createdAt ? new Date(fb.createdAt).toLocaleString() : 'N/A'} <br>
+          <strong>Date:</strong> ${new Date(fb.createdAt).toLocaleString()} <br>
         </div>
       `;
     });
 
     res.send(html);
   } catch (err) {
+    console.error(err);
     res.status(500).send('Error loading feedback.');
   }
 });
 
-server.listen(3000, () => console.log('🚀 Server on 3000'));
+server.listen(process.env.PORT || 3000, () => {
+  console.log(`🚀 Server running on port ${process.env.PORT || 3000}`);
+});
