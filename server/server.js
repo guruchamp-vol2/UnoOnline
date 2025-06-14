@@ -4,11 +4,11 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const Feedback = require('./models/Feedback');
+require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-require('dotenv').config();
 
 app.use(express.static(path.join(__dirname, '..', 'client')));
 app.use(express.json());
@@ -18,8 +18,8 @@ mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-  .then(() => console.log('✅ MongoDB connected for Feedback'))
-  .catch(err => console.error('❌ MongoDB error:', err));
+.then(() => console.log('✅ MongoDB connected for Feedback'))
+.catch(err => console.error('❌ MongoDB error:', err));
 
 let rooms = {};
 
@@ -71,11 +71,6 @@ function drawCards(room, playerId, count) {
   }
 }
 
-function skipNextPlayer(room) {
-  room.turnOrder.push(room.turnOrder.shift());
-  io.to(room.id).emit('nextTurn', room.turnOrder[0]);
-}
-
 function playAI(roomId) {
   const room = rooms[roomId];
   if (!room || !room.started) return;
@@ -91,6 +86,7 @@ function playAI(roomId) {
     if (playable) {
       const index = aiHand.indexOf(playable);
       aiHand.splice(index, 1);
+
       if (playable.color === 'wild') {
         const colors = ['red', 'green', 'blue', 'yellow'];
         const chosenColor = colors[Math.floor(Math.random() * colors.length)];
@@ -100,15 +96,10 @@ function playAI(roomId) {
 
       room.discard.push(playable);
 
-      const discardTop = { ...playable };
-      if (playable.color === 'wild' && playable.chosenColor) {
-        discardTop.chosenColor = playable.chosenColor;
-      }
-
       io.to(roomId).emit('cardPlayed', {
-        card: discardTop,
+        card: { ...playable },
         nextPlayer: room.turnOrder[0],
-        discardTop,
+        discardTop: playable,
         playerId: 'AI'
       });
 
@@ -122,25 +113,23 @@ function playAI(roomId) {
         const target = room.turnOrder[1];
         drawCards(room, target, 2);
         room.turnOrder.shift();
-        room.turnOrder.push(room.turnOrder.shift());
       } else if (playable.value === '+4') {
         const target = room.turnOrder[1];
         drawCards(room, target, 4);
         room.turnOrder.shift();
-        room.turnOrder.push(room.turnOrder.shift());
       } else if (playable.value === 'skip' || playable.value === 'reverse') {
         room.turnOrder.shift();
-        room.turnOrder.push(room.turnOrder.shift());
       }
 
+      room.turnOrder.push(room.turnOrder.shift());
     } else {
       const drawn = room.deck.pop();
       aiHand.push(drawn);
       io.to(roomId).emit('updateAIHandCount', aiHand.length);
+      room.turnOrder.push(room.turnOrder.shift());
     }
 
     io.to(roomId).emit('updateAIHandCount', aiHand.length);
-    room.turnOrder.push(room.turnOrder.shift());
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
     if (room.turnOrder[0] === 'AI') {
@@ -176,7 +165,7 @@ io.on('connection', socket => {
     io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
   });
 
-  socket.on('startGame', roomId => {
+  socket.on('startGameNow', roomId => {
     const room = rooms[roomId];
     if (!room || room.host !== socket.id) return;
     startGame(roomId);
@@ -202,15 +191,10 @@ io.on('connection', socket => {
     room.discard.push(card);
     playerHand.splice(playerHand.findIndex(c => c.color === card.color && c.value === card.value), 1);
 
-    const discardTop = { ...card };
-    if (card.color === 'wild' && card.chosenColor) {
-      discardTop.chosenColor = card.chosenColor;
-    }
-
     io.to(roomId).emit('cardPlayed', {
-      card: discardTop,
+      card: { ...card },
       nextPlayer: room.turnOrder[0],
-      discardTop,
+      discardTop: card,
       playerId: socket.id
     });
 
@@ -295,7 +279,6 @@ function startGame(roomId) {
 // === Feedback API ===
 app.post('/feedback', async (req, res) => {
   const { name, email, message } = req.body;
-
   if (!name || !message) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
@@ -314,7 +297,6 @@ app.get('/feedback-list', async (req, res) => {
   try {
     const feedbacks = await Feedback.find().sort({ createdAt: -1 });
     let html = '<h1>Feedback List</h1>';
-
     feedbacks.forEach(fb => {
       html += `
         <div style="border:1px solid #ccc; padding:10px; margin:10px;">
@@ -325,7 +307,6 @@ app.get('/feedback-list', async (req, res) => {
         </div>
       `;
     });
-
     res.send(html);
   } catch (err) {
     console.error(err);
