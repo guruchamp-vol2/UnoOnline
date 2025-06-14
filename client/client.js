@@ -30,9 +30,7 @@ joinBtn.onclick = () => {
 };
 
 playAIBtn.onclick = () => {
-  if (playAIBtn.disabled) return; // prevent multiple AI room joins
   playAIBtn.disabled = true;
-
   currentRoom = 'AI-' + Date.now();
   isVsAI = true;
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value, vsAI: true });
@@ -106,27 +104,23 @@ socket.on('nextTurn', next => {
 });
 
 socket.on('illegalMove', () => alert('Illegal move!'));
-
 socket.on('updateAIHandCount', count => {
   aiHandCountDiv.textContent = `AI has ${count} card${count !== 1 ? 's' : ''}`;
 });
-
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
   statusDiv.textContent = `AI chose ${color} color!`;
 });
-
 socket.on('gameEnd', winner => {
   alert(winner === socket.id ? 'You win!' : winner === 'AI' ? 'AI wins!' : 'You lose...');
   playAgainBtn.classList.remove('hidden');
-  playAIBtn.disabled = false; // re-enable AI button after game
+  playAIBtn.disabled = false; // re-enable for replay
 });
 
 function renderHand() {
   handDiv.innerHTML = '';
   myHand.forEach(addCard);
 }
-
 function addCard(card) {
   const el = document.createElement('div');
   el.className = 'card';
