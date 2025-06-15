@@ -117,8 +117,9 @@ socket.on('gameStart', ({ discardTop, color }) => {
   lobby.classList.add('hidden');
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
-  currentColor = color || discardTop.chosenColor || discardTop.color;
+  currentColor = color;
   updateColorDisplay();
+  updateStatus();
 });
 
 socket.on('hand', cards => {

@@ -101,6 +101,10 @@ button:disabled {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 .game-header {
@@ -111,6 +115,19 @@ button:disabled {
   padding: 1rem;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
+}
+
+.game-info {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.game-board {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
 }
 
 #status {
@@ -142,28 +159,27 @@ button:disabled {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-#discard .card-img {
+.discard-pile {
+  display: flex;
+  justify-content: center;
+  margin: 2rem 0;
+}
+
+.discard-pile .card-img {
   width: 150px;
 }
 
 /* Hand Area */
-#hand {
+.player-hand {
   background: rgba(255, 255, 255, 0.05);
   padding: 2rem;
   border-radius: 15px;
-  margin: 2rem 0;
   min-height: 200px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-}
-
-/* Discard Pile */
-#discard {
-  display: flex;
-  justify-content: center;
-  margin: 2rem 0;
+  gap: 1rem;
 }
 
 /* Game Controls */
@@ -177,11 +193,15 @@ button:disabled {
 #draw {
   background: #f1c40f;
   color: #2c3e50;
+  width: auto;
+  min-width: 150px;
 }
 
 #playAgain {
   background: #9b59b6;
   color: white;
+  width: auto;
+  min-width: 150px;
 }
 
 /* Color Display */
@@ -192,6 +212,7 @@ button:disabled {
   padding: 0.5rem 1rem;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
+  display: inline-block;
 }
 
 /* Turn Display */
@@ -257,7 +278,7 @@ button:disabled {
     width: 100px;
   }
 
-  #discard .card-img {
+  .discard-pile .card-img {
     width: 120px;
   }
 

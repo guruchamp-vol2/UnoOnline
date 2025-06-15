@@ -9,8 +9,12 @@
 <body>
   <div id="lobby">
     <h1>UNO Online</h1>
-    <input id="name" placeholder="Your name" autocomplete="off" />
-    <input id="room" placeholder="Room ID" autocomplete="off" />
+    <div class="input-group">
+      <input id="name" placeholder="Your name" autocomplete="off" />
+    </div>
+    <div class="input-group">
+      <input id="room" placeholder="Room ID" autocomplete="off" />
+    </div>
     <button id="join">Join Game</button>
     <button id="playAI">Play vs AI</button>
     <button id="startGame" class="hidden">Start Game</button>
@@ -30,14 +34,25 @@
   </div>
 
   <div id="game" class="hidden">
-    <div id="status"></div>
-    <div id="currentColorDisplay"></div>
-    <div id="currentTurnDisplay"></div>
-    <div id="discard"></div>
-    <div id="aiHandCount"></div>
-    <div id="hand"></div>
-    <button id="draw">Draw Card</button>
-    <button id="playAgain" class="hidden">Play Again</button>
+    <div class="game-header">
+      <div id="status"></div>
+      <div id="aiHandCount"></div>
+    </div>
+    
+    <div class="game-info">
+      <div id="currentColorDisplay"></div>
+      <div id="currentTurnDisplay"></div>
+    </div>
+
+    <div class="game-board">
+      <div id="discard" class="discard-pile"></div>
+      <div class="game-controls">
+        <button id="draw">Draw Card</button>
+        <button id="playAgain" class="hidden">Play Again</button>
+      </div>
+    </div>
+
+    <div id="hand" class="player-hand"></div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

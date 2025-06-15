@@ -248,6 +248,72 @@ function gameLoop(roomId) {
   }
 }
 
+// Game state management
+const games = new Map();
+
+function getNextPlayer(gameState) {
+  const { players, currentPlayer, direction } = gameState;
+  const playerIds = players.map(p => p.id);
+  const currentIndex = playerIds.indexOf(currentPlayer);
+  const nextIndex = (currentIndex + direction + playerIds.length) % playerIds.length;
+  return playerIds[nextIndex];
+}
+
+function startGame(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  // Create game state
+  const gameState = {
+    deck: createDeck(),
+    discardTop: null,
+    currentColor: null,
+    currentPlayer: room.turnOrder[0],
+    players: room.turnOrder.map(id => ({
+      id,
+      hand: []
+    })),
+    direction: 1
+  };
+
+  // Deal initial cards
+  for (let player of gameState.players) {
+    for (let i = 0; i < 7; i++) {
+      player.hand.push(gameState.deck.pop());
+    }
+  }
+
+  // Start with a non-special card
+  do {
+    gameState.discardTop = gameState.deck.pop();
+  } while (
+    gameState.discardTop.color === 'wild' ||
+    gameState.discardTop.value === '+2' ||
+    gameState.discardTop.value === 'skip' ||
+    gameState.discardTop.value === 'reverse'
+  );
+
+  gameState.currentColor = gameState.discardTop.color;
+  games.set(roomId, gameState);
+
+  // Notify all players
+  for (let player of gameState.players) {
+    if (player.id !== 'AI') {
+      io.to(player.id).emit('gameStart', {
+        discardTop: gameState.discardTop,
+        color: gameState.currentColor
+      });
+      io.to(player.id).emit('hand', player.hand);
+    }
+  }
+
+  // Start with first player
+  io.to(roomId).emit('nextTurn', gameState.currentPlayer);
+  if (gameState.currentPlayer === 'AI') {
+    gameLoop(roomId);
+  }
+}
+
 io.on('connection', socket => {
   socket.on('joinGame', ({ roomId, name, vsAI }) => {
     if (!rooms[roomId]) {
@@ -255,8 +321,6 @@ io.on('connection', socket => {
         id: roomId,
         players: {},
         turnOrder: [],
-        deck: [],
-        discard: [],
         started: false,
         host: socket.id
       };
@@ -437,49 +501,6 @@ app.get('/feedback-list', async (req, res) => {
     res.status(500).send('Error loading feedback.');
   }
 });
-
-// === Game Start ===
-function startGame(roomId) {
-  const room = rooms[roomId];
-  if (!room) return;
-
-  room.deck = createDeck();
-  room.discard = [];
-  room.started = true;
-
-  // Deal initial cards
-  for (let playerId in room.players) {
-    room.players[playerId] = [];
-    for (let i = 0; i < 7; i++) {
-      room.players[playerId].push(room.deck.pop());
-    }
-  }
-
-  // Start with a non-special card
-  let firstCard;
-  do {
-    firstCard = room.deck.pop();
-  } while (firstCard.color === 'wild' || firstCard.value === '+2' || firstCard.value === 'skip' || firstCard.value === 'reverse');
-
-  room.discard.push(firstCard);
-
-  // Notify all players
-  for (let playerId in room.players) {
-    if (playerId !== 'AI') {
-      io.to(playerId).emit('gameStart', {
-        discardTop: firstCard,
-        color: firstCard.color
-      });
-      io.to(playerId).emit('hand', room.players[playerId]);
-    }
-  }
-
-  // Start with first player
-  io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-  if (room.turnOrder[0] === 'AI') {
-    playAI(roomId);
-  }
-}
 
 // === Start Server ===
 server.listen(process.env.PORT || 3000, () => {
