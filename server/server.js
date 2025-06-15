@@ -17,13 +17,11 @@ app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
-})
-.then(() => console.log('✅ MongoDB connected for Feedback'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+}).then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
 let rooms = {};
 
-// Deck creation
 function createDeck() {
   const colors = ['red', 'green', 'blue', 'yellow'];
   const values = ['0','1','2','3','4','5','6','7','8','9','skip','reverse','+2'];
@@ -51,6 +49,7 @@ function shuffle(deck) {
   }
   return deck;
 }
+
 function isPlayable(card, topCard, currentColor) {
   return (
     card.color === 'wild' ||
@@ -58,7 +57,6 @@ function isPlayable(card, topCard, currentColor) {
     card.value === topCard.value
   );
 }
-
 function drawCards(room, playerId, count) {
   const drawnCards = [];
   for (let i = 0; i < count; i++) {
@@ -71,249 +69,67 @@ function drawCards(room, playerId, count) {
   }
 }
 
-// AI Logic
-function getAIMove(gameState, aiHand) {
-  const { discardTop, currentColor, currentPlayer, players } = gameState;
-  
-  // First, check if we can play any cards
-  const playableCards = aiHand.filter(card => 
-    card.color === currentColor || 
-    card.value === discardTop.value ||
-    card.color === 'wild'
-  );
-
-  // Strategy: Play special cards if they're beneficial
-  const specialCards = playableCards.filter(card => 
-    card.value === '+2' || 
-    card.value === 'skip' || 
-    card.value === 'reverse' ||
-    card.color === 'wild'
-  );
-
-  // If we have special cards and opponent has few cards, use them
-  const opponent = players.find(p => p.id !== 'AI');
-  if (specialCards.length > 0 && opponent.hand.length <= 3) {
-    // Prioritize +2 and wild +4 if opponent has few cards
-    const drawCards = specialCards.filter(card => 
-      card.value === '+2' || 
-      (card.color === 'wild' && card.value === '+4')
-    );
-    if (drawCards.length > 0) {
-      const card = drawCards[0];
-      if (card.color === 'wild') {
-        // Choose the color we have most of
-        const colorCounts = aiHand.reduce((acc, c) => {
-          if (c.color !== 'wild') acc[c.color] = (acc[c.color] || 0) + 1;
-          return acc;
-        }, {});
-        const chosenColor = Object.entries(colorCounts)
-          .sort((a, b) => b[1] - a[1])[0]?.[0] || 'red';
-        return { card, chosenColor };
-      }
-      return { card };
-    }
-  }
-
-  // If we have a wild card and no good matches, use it
-  const wildCards = playableCards.filter(card => card.color === 'wild');
-  if (wildCards.length > 0 && playableCards.length === wildCards.length) {
-    const card = wildCards[0];
-    // Choose the color we have most of
-    const colorCounts = aiHand.reduce((acc, c) => {
-      if (c.color !== 'wild') acc[c.color] = (acc[c.color] || 0) + 1;
-      return acc;
-    }, {});
-    const chosenColor = Object.entries(colorCounts)
-      .sort((a, b) => b[1] - a[1])[0]?.[0] || 'red';
-    return { card, chosenColor };
-  }
-
-  // If we have playable cards, play the one that leaves us with the best hand
-  if (playableCards.length > 0) {
-    // Prefer playing cards that match the current color
-    const colorMatches = playableCards.filter(card => card.color === currentColor);
-    if (colorMatches.length > 0) {
-      return { card: colorMatches[0] };
-    }
-    // Otherwise play any matching card
-    return { card: playableCards[0] };
-  }
-
-  // If we can't play, we must draw
-  return { action: 'draw' };
-}
-
-// Update the game loop to include AI moves
-function gameLoop(roomId) {
-  const gameState = games.get(roomId);
-  if (!gameState) return;
-
-  const { currentPlayer, players } = gameState;
-  const currentPlayerObj = players.find(p => p.id === currentPlayer);
-
-  // If it's AI's turn
-  if (currentPlayer === 'AI') {
-    setTimeout(() => {
-      const aiMove = getAIMove(gameState, currentPlayerObj.hand);
-      
-      if (aiMove.action === 'draw') {
-        // Draw a card
-        const drawnCard = gameState.deck.pop();
-        currentPlayerObj.hand.push(drawnCard);
-        
-        // Check if we can play the drawn card
-        const canPlayDrawnCard = 
-          drawnCard.color === gameState.currentColor ||
-          drawnCard.value === gameState.discardTop.value ||
-          drawnCard.color === 'wild';
-
-        if (canPlayDrawnCard) {
-          // Play the drawn card
-          const cardIndex = currentPlayerObj.hand.indexOf(drawnCard);
-          currentPlayerObj.hand.splice(cardIndex, 1);
-          gameState.discardTop = drawnCard;
-          
-          if (drawnCard.color === 'wild') {
-            // Choose the color we have most of
-            const colorCounts = currentPlayerObj.hand.reduce((acc, c) => {
-              if (c.color !== 'wild') acc[c.color] = (acc[c.color] || 0) + 1;
-              return acc;
-            }, {});
-            const chosenColor = Object.entries(colorCounts)
-              .sort((a, b) => b[1] - a[1])[0]?.[0] || 'red';
-            gameState.currentColor = chosenColor;
-            io.to(roomId).emit('aiDeclaredColor', chosenColor);
-          } else {
-            gameState.currentColor = drawnCard.color;
-          }
-        }
-
-        // Update game state
-        io.to(roomId).emit('cardDrawn', [drawnCard], 'AI');
-        io.to(roomId).emit('updateAIHandCount', currentPlayerObj.hand.length);
-        
-        // Move to next player
-        const nextPlayer = getNextPlayer(gameState);
-        gameState.currentPlayer = nextPlayer;
-        io.to(roomId).emit('nextTurn', nextPlayer);
-      } else {
-        // Play the chosen card
-        const { card, chosenColor } = aiMove;
-        const cardIndex = currentPlayerObj.hand.indexOf(card);
-        currentPlayerObj.hand.splice(cardIndex, 1);
-        gameState.discardTop = card;
-
-        if (card.color === 'wild') {
-          gameState.currentColor = chosenColor;
-          io.to(roomId).emit('aiDeclaredColor', chosenColor);
-        } else {
-          gameState.currentColor = card.color;
-        }
-
-        // Handle special cards
-        if (card.value === '+2') {
-          const nextPlayer = getNextPlayer(gameState);
-          const nextPlayerObj = players.find(p => p.id === nextPlayer);
-          for (let i = 0; i < 2; i++) {
-            nextPlayerObj.hand.push(gameState.deck.pop());
-          }
-          io.to(roomId).emit('cardDrawn', nextPlayerObj.hand.slice(-2), nextPlayer);
-        } else if (card.value === 'skip') {
-          // Skip next player's turn
-          gameState.currentPlayer = getNextPlayer(gameState);
-        } else if (card.value === 'reverse') {
-          gameState.direction *= -1;
-        }
-
-        // Update game state
-        io.to(roomId).emit('cardPlayed', {
-          card,
-          nextPlayer: getNextPlayer(gameState),
-          discardTop: gameState.discardTop,
-          playerId: 'AI'
-        });
-        io.to(roomId).emit('updateAIHandCount', currentPlayerObj.hand.length);
-
-        // Check for win
-        if (currentPlayerObj.hand.length === 0) {
-          io.to(roomId).emit('gameEnd', 'AI');
-          return;
-        }
-
-        // Move to next player
-        gameState.currentPlayer = getNextPlayer(gameState);
-        io.to(roomId).emit('nextTurn', gameState.currentPlayer);
-      }
-    }, 1000); // Add a 1-second delay to make AI moves feel more natural
-  }
-}
-
-// Game state management
-const games = new Map();
-
-function getNextPlayer(gameState) {
-  const { players, currentPlayer, direction } = gameState;
-  const playerIds = players.map(p => p.id);
-  const currentIndex = playerIds.indexOf(currentPlayer);
-  const nextIndex = (currentIndex + direction + playerIds.length) % playerIds.length;
-  return playerIds[nextIndex];
-}
-
-function startGame(roomId) {
+function playAI(roomId) {
   const room = rooms[roomId];
-  if (!room) return;
+  if (!room || !room.started) return;
 
-  // Create game state
-  const gameState = {
-    deck: createDeck(),
-    discardTop: null,
-    currentColor: null,
-    currentPlayer: room.turnOrder[0],
-    players: room.turnOrder.map(id => ({
-      id,
-      hand: []
-    })),
-    direction: 1
-  };
+  const aiHand = room.players['AI'];
+  const topCard = room.discard[room.discard.length - 1];
+  const currentColor = topCard.chosenColor || topCard.color;
+  const playable = aiHand.find(c => isPlayable(c, topCard, currentColor));
 
-  // Deal initial cards
-  for (let player of gameState.players) {
-    for (let i = 0; i < 7; i++) {
-      player.hand.push(gameState.deck.pop());
-    }
-  }
+  setTimeout(() => {
+    if (!room.started) return;
 
-  // Start with a non-special card
-  do {
-    gameState.discardTop = gameState.deck.pop();
-  } while (
-    gameState.discardTop.color === 'wild' ||
-    gameState.discardTop.value === '+2' ||
-    gameState.discardTop.value === 'skip' ||
-    gameState.discardTop.value === 'reverse'
-  );
+    if (playable) {
+      aiHand.splice(aiHand.indexOf(playable), 1);
 
-  gameState.currentColor = gameState.discardTop.color;
-  games.set(roomId, gameState);
+      if (playable.color === 'wild') {
+        const colors = ['red', 'green', 'blue', 'yellow'];
+        playable.chosenColor = colors[Math.floor(Math.random() * colors.length)];
+        io.to(roomId).emit('aiDeclaredColor', playable.chosenColor);
+      }
 
-  // Notify all players
-  for (let player of gameState.players) {
-    if (player.id !== 'AI') {
-      io.to(player.id).emit('gameStart', {
-        discardTop: gameState.discardTop,
-        color: gameState.currentColor
+      room.discard.push(playable);
+
+      io.to(roomId).emit('cardPlayed', {
+        card: { ...playable },
+        nextPlayer: null, // Set correctly later
+        discardTop: playable,
+        playerId: 'AI'
       });
-      io.to(player.id).emit('hand', player.hand);
+
+      if (aiHand.length === 0) {
+        room.started = false;
+        io.to(roomId).emit('gameEnd', 'AI');
+        return;
+      }
+
+      if (['+2', '+4'].includes(playable.value)) {
+        const target = room.turnOrder[1];
+        drawCards(room, target, playable.value === '+2' ? 2 : 4);
+        room.turnOrder.shift();
+      } else if (playable.value === 'skip') {
+        room.turnOrder.shift();
+      } else if (playable.value === 'reverse' && room.turnOrder.length > 2) {
+        room.turnOrder.reverse();
+        room.turnOrder.push(room.turnOrder.shift());
+        io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+        if (room.turnOrder[0] === 'AI') playAI(roomId);
+        return;
+      }
+
+    } else {
+      const drawn = room.deck.pop();
+      aiHand.push(drawn);
     }
-  }
 
-  // Start with first player
-  io.to(roomId).emit('nextTurn', gameState.currentPlayer);
-  if (gameState.currentPlayer === 'AI') {
-    gameLoop(roomId);
-  }
+    io.to(roomId).emit('updateAIHandCount', aiHand.length);
+    room.turnOrder.push(room.turnOrder.shift());
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+    if (room.turnOrder[0] === 'AI') playAI(roomId);
+  }, 800);
 }
-
 io.on('connection', socket => {
   socket.on('joinGame', ({ roomId, name, vsAI }) => {
     if (!rooms[roomId]) {
@@ -321,6 +137,8 @@ io.on('connection', socket => {
         id: roomId,
         players: {},
         turnOrder: [],
+        deck: [],
+        discard: [],
         started: false,
         host: socket.id
       };
@@ -371,98 +189,87 @@ io.on('connection', socket => {
       }
     }
   });
+});
+socket.on('playCard', ({ roomId, card }) => {
+  const room = rooms[roomId];
+  if (!room || !room.started) return;
 
-  socket.on('playCard', ({ roomId, card }) => {
-    const room = rooms[roomId];
-    if (!room || !room.started) return;
+  const playerId = socket.id;
+  const topCard = room.discard[room.discard.length - 1];
+  const currentColor = topCard.chosenColor || topCard.color;
 
-    const playerId = socket.id;
-    const topCard = room.discard[room.discard.length - 1];
-    const currentColor = topCard.chosenColor || topCard.color;
+  // Validate the move
+  if (!isPlayable(card, topCard, currentColor)) {
+    io.to(playerId).emit('illegalMove');
+    return;
+  }
 
-    // Validate the move
-    if (!isPlayable(card, topCard, currentColor)) {
-      io.to(playerId).emit('illegalMove');
-      return;
-    }
+  const playerHand = room.players[playerId];
+  const cardIndex = playerHand.findIndex(c =>
+    c.color === card.color &&
+    c.value === card.value &&
+    (!c.chosenColor || c.chosenColor === card.chosenColor)
+  );
+  if (cardIndex === -1) return;
 
-    // Remove card from player's hand
-    const playerHand = room.players[playerId];
-    const cardIndex = playerHand.findIndex(c => 
-      c.color === card.color && c.value === card.value
-    );
-    if (cardIndex === -1) return;
-    playerHand.splice(cardIndex, 1);
+  playerHand.splice(cardIndex, 1);
+  room.discard.push(card);
 
-    // Add card to discard pile
-    room.discard.push(card);
-
-    // Handle special cards
-    let nextPlayer = room.turnOrder[0];
-    if (card.value === '+2') {
-      const target = room.turnOrder[1];
-      drawCards(room, target, 2);
-      room.turnOrder.shift();
-    } else if (card.value === '+4') {
-      const target = room.turnOrder[1];
-      drawCards(room, target, 4);
-      room.turnOrder.shift();
-    } else if (card.value === 'skip') {
-      room.turnOrder.shift();
-    } else if (card.value === 'reverse' && room.turnOrder.length > 2) {
-      room.turnOrder.reverse();
-      room.turnOrder.push(room.turnOrder.shift());
-    }
-
-    // Check for winner
-    if (playerHand.length === 0) {
-      room.started = false;
-      io.to(roomId).emit('gameEnd', playerId);
-      return;
-    }
-
-    // Move to next player
+  if (card.value === '+2') {
+    const target = room.turnOrder[1];
+    drawCards(room, target, 2);
+    room.turnOrder.shift();
+  } else if (card.value === '+4') {
+    const target = room.turnOrder[1];
+    drawCards(room, target, 4);
+    room.turnOrder.shift();
+  } else if (card.value === 'skip') {
+    room.turnOrder.shift();
+  } else if (card.value === 'reverse' && room.turnOrder.length > 2) {
+    room.turnOrder.reverse();
     room.turnOrder.push(room.turnOrder.shift());
-    nextPlayer = room.turnOrder[0];
+  }
 
-    // Notify all players
-    io.to(roomId).emit('cardPlayed', {
-      card,
-      nextPlayer,
-      discardTop: card,
-      playerId
-    });
+  if (playerHand.length === 0) {
+    room.started = false;
+    io.to(roomId).emit('gameEnd', playerId);
+    return;
+  }
 
-    // If next player is AI, trigger AI move
-    if (nextPlayer === 'AI') {
-      playAI(roomId);
-    }
+  room.turnOrder.push(room.turnOrder.shift());
+  const nextPlayer = room.turnOrder[0];
+
+  io.to(roomId).emit('cardPlayed', {
+    card,
+    nextPlayer,
+    discardTop: card,
+    playerId
   });
 
-  socket.on('drawCard', roomId => {
-    const room = rooms[roomId];
-    if (!room || !room.started) return;
+  if (nextPlayer === 'AI') {
+    playAI(roomId);
+  }
+});
 
-    const playerId = socket.id;
-    if (room.turnOrder[0] !== playerId) return;
+socket.on('drawCard', roomId => {
+  const room = rooms[roomId];
+  if (!room || !room.started) return;
 
-    // Draw a card
-    const card = room.deck.pop();
-    room.players[playerId].push(card);
+  const playerId = socket.id;
+  if (room.turnOrder[0] !== playerId) return;
 
-    // Move to next player
-    room.turnOrder.push(room.turnOrder.shift());
-    const nextPlayer = room.turnOrder[0];
+  const card = room.deck.pop();
+  room.players[playerId].push(card);
 
-    // Notify the player
-    io.to(playerId).emit('cardDrawn', [card]);
-    io.to(roomId).emit('nextTurn', nextPlayer);
+  room.turnOrder.push(room.turnOrder.shift());
+  const nextPlayer = room.turnOrder[0];
 
-    // If next player is AI, trigger AI move
-    if (nextPlayer === 'AI') {
-      playAI(roomId);
-    }
-  });
+  io.to(playerId).emit('cardDrawn', [card]);
+  io.to(roomId).emit('nextTurn', nextPlayer);
+
+  if (nextPlayer === 'AI') {
+    playAI(roomId);
+  }
 });
 // === Feedback API ===
 app.post('/feedback', async (req, res) => {
@@ -501,6 +308,52 @@ app.get('/feedback-list', async (req, res) => {
     res.status(500).send('Error loading feedback.');
   }
 });
+// === Game Start ===
+function startGame(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  room.deck = createDeck();
+  room.discard = [];
+  room.started = true;
+
+  // Deal initial cards
+  for (let playerId in room.players) {
+    room.players[playerId] = [];
+    for (let i = 0; i < 7; i++) {
+      room.players[playerId].push(room.deck.pop());
+    }
+  }
+
+  // Start with a non-special card
+  let firstCard;
+  do {
+    firstCard = room.deck.pop();
+  } while (
+    firstCard.color === 'wild' ||
+    firstCard.value === '+2' ||
+    firstCard.value === '+4' ||
+    firstCard.value === 'skip' ||
+    firstCard.value === 'reverse'
+  );
+  room.discard.push(firstCard);
+
+  // Notify all players
+  for (let playerId in room.players) {
+    if (playerId !== 'AI') {
+      io.to(playerId).emit('gameStart', {
+        discardTop: firstCard,
+        color: firstCard.color
+      });
+      io.to(playerId).emit('hand', room.players[playerId]);
+    }
+  }
+
+  io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+  if (room.turnOrder[0] === 'AI') {
+    playAI(roomId);
+  }
+}
 
 // === Start Server ===
 server.listen(process.env.PORT || 3000, () => {

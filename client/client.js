@@ -1,5 +1,3 @@
-// Fixed client.js code will be inserted here.
-
 const socket = io(window.location.origin, { transports: ['websocket'] });
 
 const joinBtn = document.getElementById('join');
@@ -18,6 +16,10 @@ const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
 const currentColorDisplay = document.getElementById('currentColorDisplay');
 const currentTurnDisplay = document.getElementById('currentTurnDisplay');
+const feedbackStatus = document.getElementById('feedbackStatus');
+const fbNameInput = document.getElementById('fbName');
+const fbEmailInput = document.getElementById('fbEmail');
+const fbMessageInput = document.getElementById('fbMessage');
 
 let currentRoom = '';
 let myTurn = false;
@@ -26,9 +28,9 @@ let currentColor = null;
 let isHost = false;
 let isVsAI = false;
 
-// Color selection modal
+// Color Picker Modal - now returns a Promise to resolve chosen color
 function showColorPicker() {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const colors = ['red', 'green', 'blue', 'yellow'];
     const modal = document.createElement('div');
     modal.style.position = 'fixed';
@@ -69,7 +71,6 @@ function showColorPicker() {
     document.body.appendChild(modal);
   });
 }
-
 joinBtn.onclick = () => {
   if (!nameInput.value.trim()) {
     alert('Please enter your name');
@@ -94,9 +95,6 @@ playAIBtn.onclick = () => {
 startGameBtn.onclick = () => {
   socket.emit('startGame', currentRoom);
   startGameBtn.classList.add('hidden');
-  // Force show game scene in case server event is missed
-  lobby.classList.add('hidden');
-  gameDiv.classList.remove('hidden');
 };
 
 drawBtn.onclick = () => {
@@ -120,9 +118,8 @@ socket.on('gameStart', ({ discardTop, color }) => {
   lobby.classList.add('hidden');
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
-  currentColor = color;
+  currentColor = color || discardTop.chosenColor || discardTop.color;
   updateColorDisplay();
-  updateStatus();
 });
 
 socket.on('hand', cards => {
@@ -137,7 +134,6 @@ socket.on('cardDrawn', cards => {
   drawBtn.disabled = true;
   updateStatus();
 });
-
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
   currentColor = discardTop.chosenColor || discardTop.color;
@@ -175,13 +171,13 @@ socket.on('aiDeclaredColor', color => {
 });
 
 socket.on('gameEnd', winner => {
-  const message = winner === socket.id ? 'You win!' : 
-                 winner === 'AI' ? 'AI wins!' : 'You lose...';
+  const message = winner === socket.id
+    ? 'You win!' : winner === 'AI'
+    ? 'AI wins!' : 'You lose...';
   alert(message);
   playAgainBtn.classList.remove('hidden');
   playAIBtn.disabled = false;
 });
-
 function updateStatus() {
   statusDiv.textContent = myTurn
     ? `Your turn! (Current color: ${currentColor})`
@@ -209,12 +205,15 @@ function addCard(card) {
   img.alt = `${card.color} ${card.value}`;
   el.appendChild(img);
 
-  el.onclick = async () => {
+  el.onclick = () => {
     if (!myTurn) return;
 
     if (card.color === 'wild') {
-      const chosenColor = await showColorPicker();
-      if (!chosenColor) return;
+      const chosenColor = prompt("Choose a color (red, green, blue, yellow):", "red");
+      if (!chosenColor || !['red', 'green', 'blue', 'yellow'].includes(chosenColor)) {
+        alert('Invalid color!');
+        return;
+      }
       card.chosenColor = chosenColor;
     }
 
@@ -236,7 +235,6 @@ function updateDiscard(card) {
   el.appendChild(img);
   discardDiv.appendChild(el);
 }
-
 function cardsAreEqual(a, b) {
   return (
     a.color === b.color &&
@@ -246,23 +244,35 @@ function cardsAreEqual(a, b) {
 }
 
 function getCardImage(card) {
-  const colorMap = {
-    blue: 'Blue',
-    green: 'Green',
-    red: 'Red',
-    yellow: 'Yellow'
-  };
-
-  if (card.color === 'wild') {
-    return card.value === '+4'
-      ? 'cards/Wild_Card_Draw_4.png'
-      : 'cards/Wild_Card_Change_Colour.png';
-  } else {
-    let valueName = card.value;
-    if (valueName === 'skip') valueName = 'Skip';
-    if (valueName === 'reverse') valueName = 'Reverse';
-    if (valueName === '+2') valueName = 'Draw_2';
-
-    return `cards/${colorMap[card.color]}_${valueName}.png`;
-  }
+  const color = card.color === 'wild' ? 'black' : card.color;
+  return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='120'><rect width='80' height='120' fill='${color}' rx='10' ry='10'/><text x='40' y='65' font-family='Arial' font-size='24' fill='white' text-anchor='middle'>${card.value}</text></svg>`;
 }
+
+// === Feedback Form ===
+document.getElementById('submitFeedback').onclick = () => {
+  const name = fbNameInput.value.trim();
+  const email = fbEmailInput.value.trim();
+  const message = fbMessageInput.value.trim();
+
+  if (!name || !message) {
+    feedbackStatus.innerText = 'Please fill in required fields.';
+    return;
+  }
+
+  fetch('/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, message })
+  })
+    .then(res => res.json())
+    .then(data => {
+      feedbackStatus.innerText = '✅ Feedback submitted successfully!';
+      fbNameInput.value = '';
+      fbEmailInput.value = '';
+      fbMessageInput.value = '';
+    })
+    .catch(err => {
+      feedbackStatus.innerText = '❌ Error submitting feedback.';
+      console.error('Feedback error:', err);
+    });
+};

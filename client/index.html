@@ -1,58 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
   <title>UNO Online</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="lobby">
     <h1>UNO Online</h1>
-    <div class="input-group">
-      <input id="name" placeholder="Your name" autocomplete="off" />
-    </div>
-    <div class="input-group">
-      <input id="room" placeholder="Room ID" autocomplete="off" />
-    </div>
+    <input id="name" placeholder="Enter your name" />
+    <input id="room" placeholder="Enter room ID (optional)" />
     <button id="join">Join Game</button>
     <button id="playAI">Play vs AI</button>
+    <div id="roomList"></div>
     <button id="startGame" class="hidden">Start Game</button>
 
-    <h3>Available Rooms</h3>
-    <div id="roomList"></div>
-
-    <!-- Feedback form -->
-    <div id="feedback" style="margin-top:20px;">
+    <div id="feedback">
       <h3>Feedback</h3>
-      <input id="fbName" placeholder="Your name" required /><br />
-      <input id="fbEmail" placeholder="Your email (optional)" /><br />
-      <textarea id="fbMessage" placeholder="Your feedback" required></textarea><br />
+      <input id="fbName" placeholder="Your name" />
+      <input id="fbEmail" placeholder="Your email (optional)" />
+      <textarea id="fbMessage" placeholder="Your message"></textarea>
       <button id="submitFeedback">Submit Feedback</button>
-      <div id="feedbackStatus" style="margin-top: 8px;"></div>
+      <div id="feedbackStatus"></div>
     </div>
   </div>
 
   <div id="game" class="hidden">
-    <div class="game-header">
-      <div id="status"></div>
-      <div id="aiHandCount"></div>
-    </div>
-    
-    <div class="game-info">
-      <div id="currentColorDisplay"></div>
-      <div id="currentTurnDisplay"></div>
-    </div>
-
-    <div class="game-board">
-      <div id="discard" class="discard-pile"></div>
-      <div class="game-controls">
-        <button id="draw">Draw Card</button>
-        <button id="playAgain" class="hidden">Play Again</button>
-      </div>
-    </div>
-
-    <div id="hand" class="player-hand"></div>
+    <div id="status"></div>
+    <div id="currentColorDisplay"></div>
+    <div id="currentTurnDisplay"></div>
+    <div id="aiHandCount"></div>
+    <div id="hand"></div>
+    <div id="discard"></div>
+    <button id="draw">Draw a card</button>
+    <button id="playAgain" class="hidden">Play Again</button>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
