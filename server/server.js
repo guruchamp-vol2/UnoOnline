@@ -197,6 +197,98 @@ io.on('connection', socket => {
       }
     }
   });
+
+  socket.on('playCard', ({ roomId, card }) => {
+    const room = rooms[roomId];
+    if (!room || !room.started) return;
+
+    const playerId = socket.id;
+    const topCard = room.discard[room.discard.length - 1];
+    const currentColor = topCard.chosenColor || topCard.color;
+
+    // Validate the move
+    if (!isPlayable(card, topCard, currentColor)) {
+      io.to(playerId).emit('illegalMove');
+      return;
+    }
+
+    // Remove card from player's hand
+    const playerHand = room.players[playerId];
+    const cardIndex = playerHand.findIndex(c => 
+      c.color === card.color && c.value === card.value
+    );
+    if (cardIndex === -1) return;
+    playerHand.splice(cardIndex, 1);
+
+    // Add card to discard pile
+    room.discard.push(card);
+
+    // Handle special cards
+    let nextPlayer = room.turnOrder[0];
+    if (card.value === '+2') {
+      const target = room.turnOrder[1];
+      drawCards(room, target, 2);
+      room.turnOrder.shift();
+    } else if (card.value === '+4') {
+      const target = room.turnOrder[1];
+      drawCards(room, target, 4);
+      room.turnOrder.shift();
+    } else if (card.value === 'skip') {
+      room.turnOrder.shift();
+    } else if (card.value === 'reverse' && room.turnOrder.length > 2) {
+      room.turnOrder.reverse();
+      room.turnOrder.push(room.turnOrder.shift());
+    }
+
+    // Check for winner
+    if (playerHand.length === 0) {
+      room.started = false;
+      io.to(roomId).emit('gameEnd', playerId);
+      return;
+    }
+
+    // Move to next player
+    room.turnOrder.push(room.turnOrder.shift());
+    nextPlayer = room.turnOrder[0];
+
+    // Notify all players
+    io.to(roomId).emit('cardPlayed', {
+      card,
+      nextPlayer,
+      discardTop: card,
+      playerId
+    });
+
+    // If next player is AI, trigger AI move
+    if (nextPlayer === 'AI') {
+      playAI(roomId);
+    }
+  });
+
+  socket.on('drawCard', roomId => {
+    const room = rooms[roomId];
+    if (!room || !room.started) return;
+
+    const playerId = socket.id;
+    if (room.turnOrder[0] !== playerId) return;
+
+    // Draw a card
+    const card = room.deck.pop();
+    room.players[playerId].push(card);
+
+    // Move to next player
+    room.turnOrder.push(room.turnOrder.shift());
+    const nextPlayer = room.turnOrder[0];
+
+    // Notify the player
+    io.to(playerId).emit('cardDrawn', [card]);
+    io.to(roomId).emit('nextTurn', nextPlayer);
+
+    // If next player is AI, trigger AI move
+    if (nextPlayer === 'AI') {
+      playAI(roomId);
+    }
+  });
 });
 // === Feedback API ===
 app.post('/feedback', async (req, res) => {
@@ -239,25 +331,41 @@ app.get('/feedback-list', async (req, res) => {
 // === Game Start ===
 function startGame(roomId) {
   const room = rooms[roomId];
+  if (!room) return;
+
   room.deck = createDeck();
-
-  // Ensure first discard is not special
-  do {
-    room.discard = [room.deck.pop()];
-  } while (['+2', '+4', 'skip', 'reverse', 'wild'].includes(room.discard[0].value));
-
+  room.discard = [];
   room.started = true;
 
-  for (const playerId of Object.keys(room.players)) {
-    room.players[playerId] = room.deck.splice(-7);
+  // Deal initial cards
+  for (let playerId in room.players) {
+    room.players[playerId] = [];
+    for (let i = 0; i < 7; i++) {
+      room.players[playerId].push(room.deck.pop());
+    }
+  }
+
+  // Start with a non-special card
+  let firstCard;
+  do {
+    firstCard = room.deck.pop();
+  } while (firstCard.color === 'wild' || firstCard.value === '+2' || firstCard.value === 'skip' || firstCard.value === 'reverse');
+
+  room.discard.push(firstCard);
+
+  // Notify all players
+  for (let playerId in room.players) {
     if (playerId !== 'AI') {
+      io.to(playerId).emit('gameStart', {
+        discardTop: firstCard,
+        color: firstCard.color
+      });
       io.to(playerId).emit('hand', room.players[playerId]);
     }
   }
 
-  io.to(roomId).emit('gameStart', { discardTop: room.discard[0] });
+  // Start with first player
   io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-
   if (room.turnOrder[0] === 'AI') {
     playAI(roomId);
   }

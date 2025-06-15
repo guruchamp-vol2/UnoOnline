@@ -14,6 +14,8 @@ const statusDiv = document.getElementById('status');
 const drawBtn = document.getElementById('draw');
 const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
+const currentColorDisplay = document.getElementById('currentColorDisplay');
+const currentTurnDisplay = document.getElementById('currentTurnDisplay');
 const feedbackStatus = document.getElementById('feedbackStatus');
 const fbNameInput = document.getElementById('fbName');
 const fbEmailInput = document.getElementById('fbEmail');
@@ -26,13 +28,63 @@ let currentColor = null;
 let isHost = false;
 let isVsAI = false;
 
+// Color selection modal
+function showColorPicker() {
+  const colors = ['red', 'green', 'blue', 'yellow'];
+  const modal = document.createElement('div');
+  modal.style.position = 'fixed';
+  modal.style.top = '50%';
+  modal.style.left = '50%';
+  modal.style.transform = 'translate(-50%, -50%)';
+  modal.style.backgroundColor = 'white';
+  modal.style.padding = '20px';
+  modal.style.borderRadius = '10px';
+  modal.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
+  modal.style.zIndex = '1000';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Choose a color';
+  modal.appendChild(title);
+
+  const colorContainer = document.createElement('div');
+  colorContainer.style.display = 'flex';
+  colorContainer.style.gap = '10px';
+  colorContainer.style.marginTop = '15px';
+
+  colors.forEach(color => {
+    const colorBtn = document.createElement('button');
+    colorBtn.style.width = '50px';
+    colorBtn.style.height = '50px';
+    colorBtn.style.borderRadius = '50%';
+    colorBtn.style.border = 'none';
+    colorBtn.style.cursor = 'pointer';
+    colorBtn.style.backgroundColor = color;
+    colorBtn.onclick = () => {
+      document.body.removeChild(modal);
+      return color;
+    };
+    colorContainer.appendChild(colorBtn);
+  });
+
+  modal.appendChild(colorContainer);
+  document.body.appendChild(modal);
+}
+
 joinBtn.onclick = () => {
-  currentRoom = roomInput.value;
+  if (!nameInput.value.trim()) {
+    alert('Please enter your name');
+    return;
+  }
+  currentRoom = roomInput.value || 'room-' + Date.now();
   isVsAI = false;
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
 };
 
 playAIBtn.onclick = () => {
+  if (!nameInput.value.trim()) {
+    alert('Please enter your name');
+    return;
+  }
   playAIBtn.disabled = true;
   currentRoom = 'AI-' + Date.now();
   isVsAI = true;
@@ -66,6 +118,7 @@ socket.on('gameStart', ({ discardTop, color }) => {
   gameDiv.classList.remove('hidden');
   updateDiscard(discardTop);
   currentColor = color || discardTop.chosenColor || discardTop.color;
+  updateColorDisplay();
 });
 
 socket.on('hand', cards => {
@@ -78,12 +131,13 @@ socket.on('cardDrawn', cards => {
   renderHand();
   myTurn = false;
   drawBtn.disabled = true;
-  statusDiv.textContent = `Waiting... (Current color: ${currentColor})`;
+  updateStatus();
 });
 
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
   currentColor = discardTop.chosenColor || discardTop.color;
+  updateColorDisplay();
 
   if (playerId === socket.id) {
     const index = myHand.findIndex(c => cardsAreEqual(c, card));
@@ -93,32 +147,48 @@ socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
 
   myTurn = socket.id === nextPlayer;
   drawBtn.disabled = !myTurn;
-  statusDiv.textContent = myTurn
-    ? `Your turn! (Current color: ${currentColor})`
-    : `Waiting... (Current color: ${currentColor})`;
+  updateStatus();
 });
 
 socket.on('nextTurn', next => {
   myTurn = socket.id === next;
   drawBtn.disabled = !myTurn;
-  statusDiv.textContent = myTurn
-    ? `Your turn! (Current color: ${currentColor})`
-    : `Waiting... (Current color: ${currentColor})`;
+  updateStatus();
 });
 
-socket.on('illegalMove', () => alert('Illegal move!'));
+socket.on('illegalMove', () => {
+  alert('Illegal move! The card must match the current color or value.');
+});
+
 socket.on('updateAIHandCount', count => {
   aiHandCountDiv.textContent = `AI has ${count} card${count !== 1 ? 's' : ''}`;
 });
+
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
+  updateColorDisplay();
   statusDiv.textContent = `AI chose ${color} color!`;
 });
+
 socket.on('gameEnd', winner => {
-  alert(winner === socket.id ? 'You win!' : winner === 'AI' ? 'AI wins!' : 'You lose...');
+  const message = winner === socket.id ? 'You win!' : 
+                 winner === 'AI' ? 'AI wins!' : 'You lose...';
+  alert(message);
   playAgainBtn.classList.remove('hidden');
   playAIBtn.disabled = false;
 });
+
+function updateStatus() {
+  statusDiv.textContent = myTurn
+    ? `Your turn! (Current color: ${currentColor})`
+    : `Waiting... (Current color: ${currentColor})`;
+  currentTurnDisplay.textContent = myTurn ? "It's your turn!" : "Waiting for other player...";
+}
+
+function updateColorDisplay() {
+  currentColorDisplay.textContent = `Current color: ${currentColor}`;
+  currentColorDisplay.style.color = currentColor;
+}
 
 function renderHand() {
   handDiv.innerHTML = '';
@@ -129,23 +199,18 @@ function addCard(card) {
   const el = document.createElement('div');
   el.className = 'card';
 
-  let img = document.createElement('img');
+  const img = document.createElement('img');
   img.className = 'card-img';
-  img.style.width = '80px';
-  img.style.height = '120px';
-
-  img.src = `cards/${getImageName(card)}.png`;
+  img.src = getCardImage(card);
+  img.alt = `${card.color} ${card.value}`;
   el.appendChild(img);
 
   el.onclick = () => {
     if (!myTurn) return;
 
     if (card.color === 'wild') {
-      const chosenColor = prompt("Choose a color (red, green, blue, yellow):", "red");
-      if (!chosenColor || !['red', 'green', 'blue', 'yellow'].includes(chosenColor)) {
-        alert('Invalid color!');
-        return;
-      }
+      const chosenColor = showColorPicker();
+      if (!chosenColor) return;
       card.chosenColor = chosenColor;
     }
 
@@ -160,12 +225,10 @@ function updateDiscard(card) {
   const el = document.createElement('div');
   el.className = 'card';
 
-  let img = document.createElement('img');
+  const img = document.createElement('img');
   img.className = 'card-img';
-  img.style.width = '80px';
-  img.style.height = '120px';
-
-  img.src = `cards/${getImageName(card)}.png`;
+  img.src = getCardImage(card);
+  img.alt = `${card.color} ${card.value}`;
   el.appendChild(img);
   discardDiv.appendChild(el);
 }
@@ -178,26 +241,10 @@ function cardsAreEqual(a, b) {
   );
 }
 
-function getImageName(card) {
-  const colorMap = {
-    blue: 'Blue',
-    green: 'Green',
-    red: 'Red',
-    yellow: 'Yellow'
-  };
-
-  if (card.color === 'wild') {
-    return card.value === '+4'
-      ? 'Wild_Card_Draw_4'
-      : 'Wild_Card_Change_Colour';
-  } else {
-    let valueName = card.value;
-    if (valueName === 'skip') valueName = 'Skip';
-    if (valueName === 'reverse') valueName = 'Reverse';
-    if (valueName === '+2') valueName = 'Draw_2';
-
-    return `${colorMap[card.color]}_${valueName}`;
-  }
+function getCardImage(card) {
+  // For now, return a colored div instead of an image
+  const color = card.color === 'wild' ? 'black' : card.color;
+  return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='120'><rect width='80' height='120' fill='${color}' rx='10' ry='10'/><text x='40' y='60' font-family='Arial' font-size='20' fill='white' text-anchor='middle'>${card.value}</text></svg>`;
 }
 
 // === Feedback form ===
