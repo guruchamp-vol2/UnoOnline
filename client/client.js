@@ -94,6 +94,9 @@ playAIBtn.onclick = () => {
 startGameBtn.onclick = () => {
   socket.emit('startGame', currentRoom);
   startGameBtn.classList.add('hidden');
+  // Force show game scene in case server event is missed
+  lobby.classList.add('hidden');
+  gameDiv.classList.remove('hidden');
 };
 
 drawBtn.onclick = () => {
