@@ -1,3 +1,5 @@
+// Fixed client.js code will be inserted here.
+
 const socket = io(window.location.origin, { transports: ['websocket'] });
 
 const joinBtn = document.getElementById('join');
@@ -16,10 +18,6 @@ const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
 const currentColorDisplay = document.getElementById('currentColorDisplay');
 const currentTurnDisplay = document.getElementById('currentTurnDisplay');
-const feedbackStatus = document.getElementById('feedbackStatus');
-const fbNameInput = document.getElementById('fbName');
-const fbEmailInput = document.getElementById('fbEmail');
-const fbMessageInput = document.getElementById('fbMessage');
 
 let currentRoom = '';
 let myTurn = false;
@@ -30,44 +28,46 @@ let isVsAI = false;
 
 // Color selection modal
 function showColorPicker() {
-  const colors = ['red', 'green', 'blue', 'yellow'];
-  const modal = document.createElement('div');
-  modal.style.position = 'fixed';
-  modal.style.top = '50%';
-  modal.style.left = '50%';
-  modal.style.transform = 'translate(-50%, -50%)';
-  modal.style.backgroundColor = 'white';
-  modal.style.padding = '20px';
-  modal.style.borderRadius = '10px';
-  modal.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
-  modal.style.zIndex = '1000';
+  return new Promise((resolve) => {
+    const colors = ['red', 'green', 'blue', 'yellow'];
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.backgroundColor = 'white';
+    modal.style.padding = '20px';
+    modal.style.borderRadius = '10px';
+    modal.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
+    modal.style.zIndex = '1000';
 
-  const title = document.createElement('h3');
-  title.textContent = 'Choose a color';
-  modal.appendChild(title);
+    const title = document.createElement('h3');
+    title.textContent = 'Choose a color';
+    modal.appendChild(title);
 
-  const colorContainer = document.createElement('div');
-  colorContainer.style.display = 'flex';
-  colorContainer.style.gap = '10px';
-  colorContainer.style.marginTop = '15px';
+    const colorContainer = document.createElement('div');
+    colorContainer.style.display = 'flex';
+    colorContainer.style.gap = '10px';
+    colorContainer.style.marginTop = '15px';
 
-  colors.forEach(color => {
-    const colorBtn = document.createElement('button');
-    colorBtn.style.width = '50px';
-    colorBtn.style.height = '50px';
-    colorBtn.style.borderRadius = '50%';
-    colorBtn.style.border = 'none';
-    colorBtn.style.cursor = 'pointer';
-    colorBtn.style.backgroundColor = color;
-    colorBtn.onclick = () => {
-      document.body.removeChild(modal);
-      return color;
-    };
-    colorContainer.appendChild(colorBtn);
+    colors.forEach(color => {
+      const colorBtn = document.createElement('button');
+      colorBtn.style.width = '50px';
+      colorBtn.style.height = '50px';
+      colorBtn.style.borderRadius = '50%';
+      colorBtn.style.border = 'none';
+      colorBtn.style.cursor = 'pointer';
+      colorBtn.style.backgroundColor = color;
+      colorBtn.onclick = () => {
+        document.body.removeChild(modal);
+        resolve(color);
+      };
+      colorContainer.appendChild(colorBtn);
+    });
+
+    modal.appendChild(colorContainer);
+    document.body.appendChild(modal);
   });
-
-  modal.appendChild(colorContainer);
-  document.body.appendChild(modal);
 }
 
 joinBtn.onclick = () => {
@@ -205,11 +205,11 @@ function addCard(card) {
   img.alt = `${card.color} ${card.value}`;
   el.appendChild(img);
 
-  el.onclick = () => {
+  el.onclick = async () => {
     if (!myTurn) return;
 
     if (card.color === 'wild') {
-      const chosenColor = showColorPicker();
+      const chosenColor = await showColorPicker();
       if (!chosenColor) return;
       card.chosenColor = chosenColor;
     }
@@ -242,35 +242,23 @@ function cardsAreEqual(a, b) {
 }
 
 function getCardImage(card) {
-  // For now, return a colored div instead of an image
-  const color = card.color === 'wild' ? 'black' : card.color;
-  return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='120'><rect width='80' height='120' fill='${color}' rx='10' ry='10'/><text x='40' y='60' font-family='Arial' font-size='20' fill='white' text-anchor='middle'>${card.value}</text></svg>`;
-}
+  const colorMap = {
+    blue: 'Blue',
+    green: 'Green',
+    red: 'Red',
+    yellow: 'Yellow'
+  };
 
-// === Feedback form ===
-document.getElementById('submitFeedback').onclick = () => {
-  const name = fbNameInput.value.trim();
-  const email = fbEmailInput.value.trim();
-  const message = fbMessageInput.value.trim();
+  if (card.color === 'wild') {
+    return card.value === '+4'
+      ? 'cards/Wild_Card_Draw_4.png'
+      : 'cards/Wild_Card_Change_Colour.png';
+  } else {
+    let valueName = card.value;
+    if (valueName === 'skip') valueName = 'Skip';
+    if (valueName === 'reverse') valueName = 'Reverse';
+    if (valueName === '+2') valueName = 'Draw_2';
 
-  if (!name || !message) {
-    feedbackStatus.innerText = 'Please fill in required fields.';
-    return;
+    return `cards/${colorMap[card.color]}_${valueName}.png`;
   }
-
-  fetch('/feedback', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, message })
-  })
-    .then(res => res.json())
-    .then(data => {
-      feedbackStatus.innerText = 'Feedback submitted! Thank you.';
-      fbNameInput.value = '';
-      fbEmailInput.value = '';
-      fbMessageInput.value = '';
-    })
-    .catch(err => {
-      feedbackStatus.innerText = 'Error submitting feedback.';
-    });
-};
+}
