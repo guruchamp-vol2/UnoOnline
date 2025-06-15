@@ -15,6 +15,9 @@ const drawBtn = document.getElementById('draw');
 const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
 const feedbackStatus = document.getElementById('feedbackStatus');
+const fbNameInput = document.getElementById('fbName');
+const fbEmailInput = document.getElementById('fbEmail');
+const fbMessageInput = document.getElementById('fbMessage');
 
 let currentRoom = '';
 let myTurn = false;
@@ -22,6 +25,7 @@ let myHand = [];
 let currentColor = null;
 let isHost = false;
 let isVsAI = false;
+
 joinBtn.onclick = () => {
   currentRoom = roomInput.value;
   isVsAI = false;
@@ -51,6 +55,7 @@ playAgainBtn.onclick = () => {
   aiHandCountDiv.textContent = '';
   currentColor = null;
 };
+
 socket.on('hostInfo', hostId => {
   isHost = (socket.id === hostId);
   startGameBtn.classList.toggle('hidden', !isHost);
@@ -75,6 +80,7 @@ socket.on('cardDrawn', cards => {
   drawBtn.disabled = true;
   statusDiv.textContent = `Waiting... (Current color: ${currentColor})`;
 });
+
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
   currentColor = discardTop.chosenColor || discardTop.color;
@@ -99,27 +105,106 @@ socket.on('nextTurn', next => {
     ? `Your turn! (Current color: ${currentColor})`
     : `Waiting... (Current color: ${currentColor})`;
 });
-socket.on('illegalMove', () => alert('Illegal move!'));
 
+socket.on('illegalMove', () => alert('Illegal move!'));
 socket.on('updateAIHandCount', count => {
   aiHandCountDiv.textContent = `AI has ${count} card${count !== 1 ? 's' : ''}`;
 });
-
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
   statusDiv.textContent = `AI chose ${color} color!`;
 });
-
 socket.on('gameEnd', winner => {
   alert(winner === socket.id ? 'You win!' : winner === 'AI' ? 'AI wins!' : 'You lose...');
   playAgainBtn.classList.remove('hidden');
-  playAIBtn.disabled = false; // Allow retrying AI game
+  playAIBtn.disabled = false;
 });
-// === Feedback submission ===
+
+function renderHand() {
+  handDiv.innerHTML = '';
+  myHand.forEach(addCard);
+}
+
+function addCard(card) {
+  const el = document.createElement('div');
+  el.className = 'card';
+
+  let img = document.createElement('img');
+  img.className = 'card-img';
+  img.style.width = '80px';
+  img.style.height = '120px';
+
+  img.src = `cards/${getImageName(card)}.png`;
+  el.appendChild(img);
+
+  el.onclick = () => {
+    if (!myTurn) return;
+
+    if (card.color === 'wild') {
+      const chosenColor = prompt("Choose a color (red, green, blue, yellow):", "red");
+      if (!chosenColor || !['red', 'green', 'blue', 'yellow'].includes(chosenColor)) {
+        alert('Invalid color!');
+        return;
+      }
+      card.chosenColor = chosenColor;
+    }
+
+    socket.emit('playCard', { roomId: currentRoom, card });
+  };
+
+  handDiv.appendChild(el);
+}
+
+function updateDiscard(card) {
+  discardDiv.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'card';
+
+  let img = document.createElement('img');
+  img.className = 'card-img';
+  img.style.width = '80px';
+  img.style.height = '120px';
+
+  img.src = `cards/${getImageName(card)}.png`;
+  el.appendChild(img);
+  discardDiv.appendChild(el);
+}
+
+function cardsAreEqual(a, b) {
+  return (
+    a.color === b.color &&
+    a.value === b.value &&
+    (a.chosenColor === b.chosenColor || !a.chosenColor || !b.chosenColor)
+  );
+}
+
+function getImageName(card) {
+  const colorMap = {
+    blue: 'Blue',
+    green: 'Green',
+    red: 'Red',
+    yellow: 'Yellow'
+  };
+
+  if (card.color === 'wild') {
+    return card.value === '+4'
+      ? 'Wild_Card_Draw_4'
+      : 'Wild_Card_Change_Colour';
+  } else {
+    let valueName = card.value;
+    if (valueName === 'skip') valueName = 'Skip';
+    if (valueName === 'reverse') valueName = 'Reverse';
+    if (valueName === '+2') valueName = 'Draw_2';
+
+    return `${colorMap[card.color]}_${valueName}`;
+  }
+}
+
+// === Feedback form ===
 document.getElementById('submitFeedback').onclick = () => {
-  const name = document.getElementById('fbName').value.trim();
-  const email = document.getElementById('fbEmail').value.trim();
-  const message = document.getElementById('fbMessage').value.trim();
+  const name = fbNameInput.value.trim();
+  const email = fbEmailInput.value.trim();
+  const message = fbMessageInput.value.trim();
 
   if (!name || !message) {
     feedbackStatus.innerText = 'Please fill in required fields.';
@@ -128,24 +213,17 @@ document.getElementById('submitFeedback').onclick = () => {
 
   fetch('/feedback', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email, message })
   })
-  .then(res => res.json())
-  .then(data => {
-    if (data.success) {
-      feedbackStatus.innerText = '✅ Feedback submitted successfully!';
-      document.getElementById('fbName').value = '';
-      document.getElementById('fbEmail').value = '';
-      document.getElementById('fbMessage').value = '';
-    } else {
-      feedbackStatus.innerText = '❌ Error submitting feedback.';
-    }
-  })
-  .catch(err => {
-    console.error(err);
-    feedbackStatus.innerText = '❌ Server error during submission.';
-  });
+    .then(res => res.json())
+    .then(data => {
+      feedbackStatus.innerText = 'Feedback submitted! Thank you.';
+      fbNameInput.value = '';
+      fbEmailInput.value = '';
+      fbMessageInput.value = '';
+    })
+    .catch(err => {
+      feedbackStatus.innerText = 'Error submitting feedback.';
+    });
 };
