@@ -13,27 +13,28 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, '..', 'client')));
 app.use(express.json());
 
-// Connect to MongoDB
+// MongoDB setup
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-  .then(() => console.log('✅ MongoDB connected for Feedback'))
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+.then(() => console.log('✅ MongoDB connected for Feedback'))
+.catch(err => console.error('❌ MongoDB connection error:', err));
 
 let rooms = {};
 
+// Deck creation
 function createDeck() {
   const colors = ['red', 'green', 'blue', 'yellow'];
-  const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', '+2'];
+  const values = ['0','1','2','3','4','5','6','7','8','9','skip','reverse','+2'];
   const deck = [];
 
-  colors.forEach(color => {
-    values.forEach(value => {
+  for (let color of colors) {
+    for (let value of values) {
       deck.push({ color, value });
       if (value !== '0') deck.push({ color, value });
-    });
-  });
+    }
+  }
 
   for (let i = 0; i < 4; i++) {
     deck.push({ color: 'wild', value: 'wild' });
@@ -50,7 +51,6 @@ function shuffle(deck) {
   }
   return deck;
 }
-
 function isPlayable(card, topCard, currentColor) {
   return (
     card.color === 'wild' ||
@@ -60,16 +60,17 @@ function isPlayable(card, topCard, currentColor) {
 }
 
 function drawCards(room, playerId, count) {
-  const cards = [];
+  const drawnCards = [];
   for (let i = 0; i < count; i++) {
-    const drawn = room.deck.pop();
-    room.players[playerId].push(drawn);
-    cards.push(drawn);
+    const card = room.deck.pop();
+    room.players[playerId].push(card);
+    drawnCards.push(card);
   }
   if (playerId !== 'AI') {
-    io.to(playerId).emit('cardDrawn', cards);
+    io.to(playerId).emit('cardDrawn', drawnCards);
   }
 }
+
 function playAI(roomId) {
   const room = rooms[roomId];
   if (!room || !room.started) return;
@@ -83,14 +84,12 @@ function playAI(roomId) {
     if (!room.started) return;
 
     if (playable) {
-      const index = aiHand.indexOf(playable);
-      aiHand.splice(index, 1);
+      aiHand.splice(aiHand.indexOf(playable), 1);
 
       if (playable.color === 'wild') {
         const colors = ['red', 'green', 'blue', 'yellow'];
-        const chosenColor = colors[Math.floor(Math.random() * colors.length)];
-        playable.chosenColor = chosenColor;
-        io.to(roomId).emit('aiDeclaredColor', chosenColor);
+        playable.chosenColor = colors[Math.floor(Math.random() * colors.length)];
+        io.to(roomId).emit('aiDeclaredColor', playable.chosenColor);
       }
 
       room.discard.push(playable);
@@ -103,17 +102,16 @@ function playAI(roomId) {
       });
 
       if (aiHand.length === 0) {
-        io.to(roomId).emit('gameEnd', 'AI');
         room.started = false;
+        io.to(roomId).emit('gameEnd', 'AI');
         return;
       }
 
+      const target = room.turnOrder[1];
       if (playable.value === '+2') {
-        const target = room.turnOrder[1];
         drawCards(room, target, 2);
         room.turnOrder.shift();
       } else if (playable.value === '+4') {
-        const target = room.turnOrder[1];
         drawCards(room, target, 4);
         room.turnOrder.shift();
       } else if (playable.value === 'skip') {
@@ -137,9 +135,7 @@ function playAI(roomId) {
     io.to(roomId).emit('updateAIHandCount', aiHand.length);
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
 
-    if (room.turnOrder[0] === 'AI') {
-      playAI(roomId);
-    }
+    if (room.turnOrder[0] === 'AI') playAI(roomId);
   }, 800);
 }
 io.on('connection', socket => {
@@ -169,12 +165,14 @@ io.on('connection', socket => {
       rooms[roomId].turnOrder.push('AI');
     }
 
-    io.emit('roomList', Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])));
+    io.emit('roomList', Object.fromEntries(
+      Object.entries(rooms).map(([id, room]) => [id, Object.keys(room.players).length])
+    ));
   });
 
   socket.on('startGame', roomId => {
     const room = rooms[roomId];
-    if (room && room.host === socket.id) {
+    if (room && socket.id === room.host) {
       startGame(roomId);
     }
   });
@@ -191,8 +189,11 @@ io.on('connection', socket => {
       if (room.players[socket.id]) {
         delete room.players[socket.id];
         room.turnOrder = room.turnOrder.filter(id => id !== socket.id);
-        if (room.turnOrder.length === 0) delete rooms[roomId];
-        else io.to(roomId).emit('roomList', rooms[roomId]);
+        if (room.turnOrder.length === 0) {
+          delete rooms[roomId];
+        } else {
+          io.to(roomId).emit('roomList', rooms[roomId]);
+        }
       }
     }
   });
@@ -234,11 +235,13 @@ app.get('/feedback-list', async (req, res) => {
     res.status(500).send('Error loading feedback.');
   }
 });
+
+// === Game Start ===
 function startGame(roomId) {
   const room = rooms[roomId];
   room.deck = createDeck();
 
-  // Ensure the first discard is not a wild, +2, +4, skip, or reverse
+  // Ensure first discard is not special
   do {
     room.discard = [room.deck.pop()];
   } while (['+2', '+4', 'skip', 'reverse', 'wild'].includes(room.discard[0].value));
@@ -260,6 +263,7 @@ function startGame(roomId) {
   }
 }
 
+// === Start Server ===
 server.listen(process.env.PORT || 3000, () => {
   console.log(`🚀 Server running on port ${process.env.PORT || 3000}`);
 });
