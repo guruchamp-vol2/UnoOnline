@@ -1,3 +1,5 @@
+// server/server.js
+
 const path = require('path');
 const express = require('express');
 const http = require('http');
@@ -13,11 +15,12 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, '..', 'client')));
 app.use(express.json());
 
-// MongoDB setup
+// Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
-}).then(() => console.log('✅ MongoDB connected'))
+})
+  .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 let rooms = {};
@@ -58,14 +61,14 @@ function isPlayable(card, topCard, currentColor) {
   );
 }
 function drawCards(room, playerId, count) {
-  const drawnCards = [];
+  const drawn = [];
   for (let i = 0; i < count; i++) {
     const card = room.deck.pop();
     room.players[playerId].push(card);
-    drawnCards.push(card);
+    drawn.push(card);
   }
   if (playerId !== 'AI') {
-    io.to(playerId).emit('cardDrawn', drawnCards);
+    io.to(playerId).emit('cardDrawn', drawn);
   }
 }
 
@@ -94,7 +97,7 @@ function playAI(roomId) {
 
       io.to(roomId).emit('cardPlayed', {
         card: { ...playable },
-        nextPlayer: null, // Set correctly later
+        nextPlayer: room.turnOrder[0],
         discardTop: playable,
         playerId: 'AI'
       });
@@ -105,9 +108,12 @@ function playAI(roomId) {
         return;
       }
 
-      if (['+2', '+4'].includes(playable.value)) {
-        const target = room.turnOrder[1];
-        drawCards(room, target, playable.value === '+2' ? 2 : 4);
+      const target = room.turnOrder[1];
+      if (playable.value === '+2') {
+        drawCards(room, target, 2);
+        room.turnOrder.shift();
+      } else if (playable.value === '+4') {
+        drawCards(room, target, 4);
         room.turnOrder.shift();
       } else if (playable.value === 'skip') {
         room.turnOrder.shift();
@@ -119,14 +125,17 @@ function playAI(roomId) {
         return;
       }
 
+      room.turnOrder.push(room.turnOrder.shift());
     } else {
       const drawn = room.deck.pop();
       aiHand.push(drawn);
+      io.to(roomId).emit('updateAIHandCount', aiHand.length);
+      room.turnOrder.push(room.turnOrder.shift());
     }
 
     io.to(roomId).emit('updateAIHandCount', aiHand.length);
-    room.turnOrder.push(room.turnOrder.shift());
     io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+
     if (room.turnOrder[0] === 'AI') playAI(roomId);
   }, 800);
 }
@@ -198,23 +207,18 @@ socket.on('playCard', ({ roomId, card }) => {
   const topCard = room.discard[room.discard.length - 1];
   const currentColor = topCard.chosenColor || topCard.color;
 
-  // Validate the move
   if (!isPlayable(card, topCard, currentColor)) {
     io.to(playerId).emit('illegalMove');
     return;
   }
 
-  const playerHand = room.players[playerId];
-  const cardIndex = playerHand.findIndex(c =>
-    c.color === card.color &&
-    c.value === card.value &&
-    (!c.chosenColor || c.chosenColor === card.chosenColor)
-  );
-  if (cardIndex === -1) return;
-
-  playerHand.splice(cardIndex, 1);
+  const hand = room.players[playerId];
+  const idx = hand.findIndex(c => c.color === card.color && c.value === card.value);
+  if (idx === -1) return;
+  hand.splice(idx, 1);
   room.discard.push(card);
 
+  let nextPlayer = room.turnOrder[0];
   if (card.value === '+2') {
     const target = room.turnOrder[1];
     drawCards(room, target, 2);
@@ -230,14 +234,14 @@ socket.on('playCard', ({ roomId, card }) => {
     room.turnOrder.push(room.turnOrder.shift());
   }
 
-  if (playerHand.length === 0) {
+  if (hand.length === 0) {
     room.started = false;
     io.to(roomId).emit('gameEnd', playerId);
     return;
   }
 
   room.turnOrder.push(room.turnOrder.shift());
-  const nextPlayer = room.turnOrder[0];
+  nextPlayer = room.turnOrder[0];
 
   io.to(roomId).emit('cardPlayed', {
     card,
@@ -254,7 +258,6 @@ socket.on('playCard', ({ roomId, card }) => {
 socket.on('drawCard', roomId => {
   const room = rooms[roomId];
   if (!room || !room.started) return;
-
   const playerId = socket.id;
   if (room.turnOrder[0] !== playerId) return;
 
@@ -271,90 +274,84 @@ socket.on('drawCard', roomId => {
     playAI(roomId);
   }
 });
-// === Feedback API ===
-app.post('/feedback', async (req, res) => {
-  const { name, email, message } = req.body;
-  if (!name || !message) {
-    return res.status(400).json({ error: 'Missing required fields.' });
-  }
-
-  try {
-    const fb = new Feedback({ name, email, message });
-    await fb.save();
-    res.json({ success: true });
-  } catch (err) {
-    console.error('❌ Feedback save error:', err);
-    res.status(500).json({ error: 'Server error.' });
-  }
-});
-
-app.get('/feedback-list', async (req, res) => {
-  try {
-    const feedbacks = await Feedback.find().sort({ createdAt: -1 });
-    let html = '<h1>Feedback List</h1>';
-    feedbacks.forEach(fb => {
-      html += `
-        <div style="border:1px solid #ccc; padding:10px; margin:10px;">
-          <strong>Name:</strong> ${fb.name} <br>
-          <strong>Email:</strong> ${fb.email || 'N/A'} <br>
-          <strong>Message:</strong> ${fb.message} <br>
-          <strong>Date:</strong> ${new Date(fb.createdAt).toLocaleString()} <br>
-        </div>
-      `;
-    });
-    res.send(html);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Error loading feedback.');
-  }
-});
-// === Game Start ===
-function startGame(roomId) {
-  const room = rooms[roomId];
-  if (!room) return;
-
-  room.deck = createDeck();
-  room.discard = [];
-  room.started = true;
-
-  // Deal initial cards
-  for (let playerId in room.players) {
-    room.players[playerId] = [];
-    for (let i = 0; i < 7; i++) {
-      room.players[playerId].push(room.deck.pop());
+  // === Feedback API ===
+  app.post('/feedback', async (req, res) => {
+    const { name, email, message } = req.body;
+    if (!name || !message) {
+      return res.status(400).json({ error: 'Missing required fields.' });
     }
-  }
 
-  // Start with a non-special card
-  let firstCard;
-  do {
-    firstCard = room.deck.pop();
-  } while (
-    firstCard.color === 'wild' ||
-    firstCard.value === '+2' ||
-    firstCard.value === '+4' ||
-    firstCard.value === 'skip' ||
-    firstCard.value === 'reverse'
-  );
-  room.discard.push(firstCard);
+    try {
+      const fb = new Feedback({ name, email, message });
+      await fb.save();
+      res.json({ success: true });
+    } catch (err) {
+      console.error('❌ Feedback save error:', err);
+      res.status(500).json({ error: 'Server error.' });
+    }
+  });
 
-  // Notify all players
-  for (let playerId in room.players) {
-    if (playerId !== 'AI') {
-      io.to(playerId).emit('gameStart', {
-        discardTop: firstCard,
-        color: firstCard.color
+  app.get('/feedback-list', async (req, res) => {
+    try {
+      const feedbacks = await Feedback.find().sort({ createdAt: -1 });
+      let html = '<h1>Feedback List</h1>';
+      feedbacks.forEach(fb => {
+        html += `
+          <div style="border:1px solid #ccc; padding:10px; margin:10px;">
+            <strong>Name:</strong> ${fb.name} <br>
+            <strong>Email:</strong> ${fb.email || 'N/A'} <br>
+            <strong>Message:</strong> ${fb.message} <br>
+            <strong>Date:</strong> ${new Date(fb.createdAt).toLocaleString()} <br>
+          </div>
+        `;
       });
-      io.to(playerId).emit('hand', room.players[playerId]);
+      res.send(html);
+    } catch (err) {
+      console.error(err);
+      res.status(500).send('Error loading feedback.');
+    }
+  });
+
+  // === Game Start ===
+  function startGame(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    room.deck = createDeck();
+    room.discard = [];
+    room.started = true;
+
+    for (let playerId in room.players) {
+      room.players[playerId] = [];
+      for (let i = 0; i < 7; i++) {
+        room.players[playerId].push(room.deck.pop());
+      }
+    }
+
+    let firstCard;
+    do {
+      firstCard = room.deck.pop();
+    } while (
+      firstCard.color === 'wild' ||
+      ['+2', '+4', 'skip', 'reverse'].includes(firstCard.value)
+    );
+    room.discard.push(firstCard);
+
+    for (let playerId in room.players) {
+      if (playerId !== 'AI') {
+        io.to(playerId).emit('gameStart', {
+          discardTop: firstCard,
+          color: firstCard.color
+        });
+        io.to(playerId).emit('hand', room.players[playerId]);
+      }
+    }
+
+    io.to(roomId).emit('nextTurn', room.turnOrder[0]);
+    if (room.turnOrder[0] === 'AI') {
+      playAI(roomId);
     }
   }
-
-  io.to(roomId).emit('nextTurn', room.turnOrder[0]);
-  if (room.turnOrder[0] === 'AI') {
-    playAI(roomId);
-  }
-}
-
 // === Start Server ===
 server.listen(process.env.PORT || 3000, () => {
   console.log(`🚀 Server running on port ${process.env.PORT || 3000}`);

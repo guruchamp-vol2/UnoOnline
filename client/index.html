@@ -8,34 +8,39 @@
 <body>
   <div id="lobby">
     <h1>UNO Online</h1>
-    <input id="name" placeholder="Enter your name" />
-    <input id="room" placeholder="Enter room ID (optional)" />
-    <button id="join">Join Game</button>
+    <input type="text" id="name" placeholder="Enter your name">
+    <input type="text" id="room" placeholder="Room ID (optional)">
+    <button id="join">Join Room</button>
     <button id="playAI">Play vs AI</button>
-    <div id="roomList"></div>
     <button id="startGame" class="hidden">Start Game</button>
+
+    <h3>Available Rooms:</h3>
+    <div id="roomList"></div>
 
     <div id="feedback">
       <h3>Feedback</h3>
-      <input id="fbName" placeholder="Your name" />
-      <input id="fbEmail" placeholder="Your email (optional)" />
-      <textarea id="fbMessage" placeholder="Your message"></textarea>
+      <input type="text" id="fbName" placeholder="Your name (required)">
+      <input type="email" id="fbEmail" placeholder="Your email (optional)">
+      <textarea id="fbMessage" placeholder="Your message (required)"></textarea>
       <button id="submitFeedback">Submit Feedback</button>
       <div id="feedbackStatus"></div>
     </div>
   </div>
 
   <div id="game" class="hidden">
-    <div id="status"></div>
+    <h2>UNO Game</h2>
+    <div id="status">Waiting for game to start...</div>
     <div id="currentColorDisplay"></div>
     <div id="currentTurnDisplay"></div>
     <div id="aiHandCount"></div>
-    <div id="hand"></div>
     <div id="discard"></div>
-    <button id="draw">Draw a card</button>
+    <div id="hand"></div>
+
+    <button id="draw">Draw Card</button>
     <button id="playAgain" class="hidden">Play Again</button>
   </div>
 
+  <!-- Client-side script -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="client.js"></script>
 </body>
