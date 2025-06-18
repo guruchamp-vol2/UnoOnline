@@ -16,10 +16,6 @@ const playAgainBtn = document.getElementById('playAgain');
 const aiHandCountDiv = document.getElementById('aiHandCount');
 const currentColorDisplay = document.getElementById('currentColorDisplay');
 const currentTurnDisplay = document.getElementById('currentTurnDisplay');
-const feedbackStatus = document.getElementById('feedbackStatus');
-const fbNameInput = document.getElementById('fbName');
-const fbEmailInput = document.getElementById('fbEmail');
-const fbMessageInput = document.getElementById('fbMessage');
 
 let currentRoom = '';
 let myTurn = false;
@@ -28,9 +24,8 @@ let currentColor = null;
 let isHost = false;
 let isVsAI = false;
 
-// Color Picker Modal - now returns a Promise to resolve chosen color
 function showColorPicker() {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const colors = ['red', 'green', 'blue', 'yellow'];
     const modal = document.createElement('div');
     modal.style.position = 'fixed';
@@ -71,21 +66,16 @@ function showColorPicker() {
     document.body.appendChild(modal);
   });
 }
+
 joinBtn.onclick = () => {
-  if (!nameInput.value.trim()) {
-    alert('Please enter your name');
-    return;
-  }
+  if (!nameInput.value.trim()) return alert('Please enter your name');
   currentRoom = roomInput.value || 'room-' + Date.now();
   isVsAI = false;
   socket.emit('joinGame', { roomId: currentRoom, name: nameInput.value });
 };
 
 playAIBtn.onclick = () => {
-  if (!nameInput.value.trim()) {
-    alert('Please enter your name');
-    return;
-  }
+  if (!nameInput.value.trim()) return alert('Please enter your name');
   playAIBtn.disabled = true;
   currentRoom = 'AI-' + Date.now();
   isVsAI = true;
@@ -134,6 +124,7 @@ socket.on('cardDrawn', cards => {
   drawBtn.disabled = true;
   updateStatus();
 });
+
 socket.on('cardPlayed', ({ card, nextPlayer, discardTop, playerId }) => {
   updateDiscard(discardTop);
   currentColor = discardTop.chosenColor || discardTop.color;
@@ -157,7 +148,7 @@ socket.on('nextTurn', next => {
 });
 
 socket.on('illegalMove', () => {
-  alert('Illegal move! The card must match the current color or value.');
+  alert('Illegal move!');
 });
 
 socket.on('updateAIHandCount', count => {
@@ -167,17 +158,16 @@ socket.on('updateAIHandCount', count => {
 socket.on('aiDeclaredColor', color => {
   currentColor = color;
   updateColorDisplay();
-  statusDiv.textContent = `AI chose ${color} color!`;
+  statusDiv.textContent = `AI chose ${color}`;
 });
 
 socket.on('gameEnd', winner => {
-  const message = winner === socket.id
-    ? 'You win!' : winner === 'AI'
-    ? 'AI wins!' : 'You lose...';
+  const message = winner === socket.id ? 'You win!' : winner === 'AI' ? 'AI wins!' : 'You lose...';
   alert(message);
   playAgainBtn.classList.remove('hidden');
   playAIBtn.disabled = false;
 });
+
 function updateStatus() {
   statusDiv.textContent = myTurn
     ? `Your turn! (Current color: ${currentColor})`
@@ -205,15 +195,12 @@ function addCard(card) {
   img.alt = `${card.color} ${card.value}`;
   el.appendChild(img);
 
-  el.onclick = () => {
+  el.onclick = async () => {
     if (!myTurn) return;
 
-    if (card.color === 'wild') {
-      const chosenColor = prompt("Choose a color (red, green, blue, yellow):", "red");
-      if (!chosenColor || !['red', 'green', 'blue', 'yellow'].includes(chosenColor)) {
-        alert('Invalid color!');
-        return;
-      }
+    if (card.color === 'wild' || card.value === '+4') {
+      const chosenColor = await showColorPicker();
+      if (!chosenColor) return;
       card.chosenColor = chosenColor;
     }
 
@@ -235,6 +222,7 @@ function updateDiscard(card) {
   el.appendChild(img);
   discardDiv.appendChild(el);
 }
+
 function cardsAreEqual(a, b) {
   return (
     a.color === b.color &&
@@ -247,32 +235,3 @@ function getCardImage(card) {
   const color = card.color === 'wild' ? 'black' : card.color;
   return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='120'><rect width='80' height='120' fill='${color}' rx='10' ry='10'/><text x='40' y='65' font-family='Arial' font-size='24' fill='white' text-anchor='middle'>${card.value}</text></svg>`;
 }
-
-// === Feedback Form ===
-document.getElementById('submitFeedback').onclick = () => {
-  const name = fbNameInput.value.trim();
-  const email = fbEmailInput.value.trim();
-  const message = fbMessageInput.value.trim();
-
-  if (!name || !message) {
-    feedbackStatus.innerText = 'Please fill in required fields.';
-    return;
-  }
-
-  fetch('/feedback', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, message })
-  })
-    .then(res => res.json())
-    .then(data => {
-      feedbackStatus.innerText = '✅ Feedback submitted successfully!';
-      fbNameInput.value = '';
-      fbEmailInput.value = '';
-      fbMessageInput.value = '';
-    })
-    .catch(err => {
-      feedbackStatus.innerText = '❌ Error submitting feedback.';
-      console.error('Feedback error:', err);
-    });
-};

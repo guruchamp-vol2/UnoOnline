@@ -1,47 +1,34 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>UNO Online</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div id="lobby">
-    <h1>UNO Online</h1>
-    <input type="text" id="name" placeholder="Enter your name">
-    <input type="text" id="room" placeholder="Room ID (optional)">
-    <button id="join">Join Room</button>
-    <button id="playAI">Play vs AI</button>
-    <button id="startGame" class="hidden">Start Game</button>
+<script>
+  const feedbackStatus = document.getElementById('feedbackStatus');
+  const fbNameInput = document.getElementById('fbName');
+  const fbEmailInput = document.getElementById('fbEmail');
+  const fbMessageInput = document.getElementById('fbMessage');
 
-    <h3>Available Rooms:</h3>
-    <div id="roomList"></div>
+  document.getElementById('submitFeedback').onclick = () => {
+    const name = fbNameInput.value.trim();
+    const email = fbEmailInput.value.trim();
+    const message = fbMessageInput.value.trim();
 
-    <div id="feedback">
-      <h3>Feedback</h3>
-      <input type="text" id="fbName" placeholder="Your name (required)">
-      <input type="email" id="fbEmail" placeholder="Your email (optional)">
-      <textarea id="fbMessage" placeholder="Your message (required)"></textarea>
-      <button id="submitFeedback">Submit Feedback</button>
-      <div id="feedbackStatus"></div>
-    </div>
-  </div>
+    if (!name || !message) {
+      feedbackStatus.innerText = 'Please fill in required fields.';
+      return;
+    }
 
-  <div id="game" class="hidden">
-    <h2>UNO Game</h2>
-    <div id="status">Waiting for game to start...</div>
-    <div id="currentColorDisplay"></div>
-    <div id="currentTurnDisplay"></div>
-    <div id="aiHandCount"></div>
-    <div id="discard"></div>
-    <div id="hand"></div>
-
-    <button id="draw">Draw Card</button>
-    <button id="playAgain" class="hidden">Play Again</button>
-  </div>
-
-  <!-- Client-side script -->
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="client.js"></script>
-</body>
-</html>
+    fetch('/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, message })
+    })
+    .then(res => res.json())
+    .then(data => {
+      feedbackStatus.innerText = '✅ Feedback submitted successfully!';
+      fbNameInput.value = '';
+      fbEmailInput.value = '';
+      fbMessageInput.value = '';
+    })
+    .catch(err => {
+      feedbackStatus.innerText = '❌ Error submitting feedback.';
+      console.error('Feedback error:', err);
+    });
+  };
+</script>
